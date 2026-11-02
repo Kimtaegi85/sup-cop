@@ -1,0 +1,35 @@
+name: droplist
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: droplist
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: fetch
+        run: node scripts/fetch-droplist.mjs
+      - name: commit if changed
+        run: |
+          if git diff --quiet -- droplist.json; then
+            echo "no change"
+            exit 0
+          fi
+          git config user.name "droplist-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add droplist.json
+          git commit -m "droplist: auto update"
+          git push
