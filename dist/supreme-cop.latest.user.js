@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Supreme Drop Cop (KR/US)
 // @namespace    aside.supreme.cop
-// @version      4.4.0
+// @version      4.5.0
 // @description  슈프림 드랍 감지 -> 사이즈 선택 -> 카트 담기 -> 체크아웃 자동입력 (KR Global-e / US Shopify)
 // @match        https://shop.supreme.com/*
 // @match        https://us.supreme.com/*
@@ -168,6 +168,15 @@
 
   /* ---------------- 1. 드랍 감지 ---------------- */
 
+  function parseRetryAfter(res) {
+    const v = res.headers.get("retry-after");
+    if (!v) return 0;
+    const n = Number(v);
+    if (Number.isFinite(n)) return Math.max(0, n * 1000);
+    const d = Date.parse(v);
+    return Number.isFinite(d) ? Math.max(0, d - Date.now()) : 0;
+  }
+
   // /pages/shop 앞부분만 스트리밍으로 읽고 products 배열의 핸들만 수집
   async function readHandles(want) {
     const ctrl = new AbortController();
@@ -179,7 +188,7 @@
     }
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      return { handles: [], queued: looksQueued(res.status, t), status: res.status };
+      return { handles: [], queued: looksQueued(res.status, t), status: res.status, retryAfter: parseRetryAfter(res) };
     }
     if (!res.body) {
       const t = await res.text();
@@ -231,7 +240,9 @@
     if (r.queued) {
       STATE.queue += 1;
       const back = Math.min(4000, 400 * Math.pow(1.7, STATE.queue));
-      STATE.queueUntil = Date.now() + back;
+      const ra = Math.min(15000, r.retryAfter || 0);
+      if (ra > back) log(`retry-after ${Math.round(ra / 1000)}s 준수`, "q");
+      STATE.queueUntil = Date.now() + Math.max(back, ra);
       log(`큐 감지 (${r.status || "html"}) → ${Math.round(back)}ms 대기`, "q");
       return;
     }
@@ -447,7 +458,10 @@
         if (m) {
           log("MCP 카트 생성 성공", "ok");
           beep(2);
-          location.assign(`/checkouts/cn/${m[1]}?key=${m[2]}`);
+          const krHost = HOST === "shop.supreme.com";
+          location.assign(MARKET === "US" && krHost
+            ? `https://us-production.myshopify.com/checkouts/cn/${m[1]}?key=${m[2]}`
+            : `/checkouts/cn/${m[1]}?key=${m[2]}`);
           return true;
         }
       }
@@ -470,6 +484,10 @@
       await sleep(700 * (attempt + 1));
     }
     { const d = delayFor("checkout"); if (d) await sleep(jit(d)); }
+    if (MARKET === "US" && HOST === "shop.supreme.com") {
+      location.assign("https://us-production.myshopify.com/checkout");
+      return;
+    }
     location.assign("/checkout");
   }
 
@@ -568,24 +586,44 @@
   /* ---------------- 휴대폰 원격 트리거 ---------------- */
 
   let remoteTs = 0;
+
+  async function readState() {
+    if (CFG.ghToken) {
+      const r = await fetch(CFG.statePath + "?t=" + Date.now(), {
+        cache: "no-store", headers: { authorization: "Bearer " + CFG.ghToken, accept: "application/vnd.github+json" } });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob((j.content || "").replace(/\n/g, "")), c => c.charCodeAt(0))));
+    }
+    const r = await fetch(CFG.remoteUrl + "?t=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) return null;
+    return await r.json();
+  }
+
+  // state.json 은 마켓별 슬롯(byMarket)을 우선 읽고, 없으면 구형 단일 슬롯을 따른다.
+  function myState(st) {
+    if (!st) return null;
+    const bm = st.byMarket && st.byMarket[MARKET];
+    if (bm && typeof bm.ts === "number") return bm;
+    if (st.byMarket) return null; // 마켓별 파일인데 내 슬롯이 없음
+    return st.market && st.market !== MARKET ? null : st;
+  }
+
   function startRemoteWatch() {
+    let primed = false;
     setInterval(async () => {
       try {
-        let st = null;
-        if (CFG.ghToken) {
-          const r = await fetch(CFG.statePath + "?t=" + Date.now(), {
-            cache: "no-store", headers: { authorization: "Bearer " + CFG.ghToken, accept: "application/vnd.github+json" } });
-          if (!r.ok) return;
-          const j = await r.json();
-          st = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob((j.content || "").replace(/\n/g, "")), c => c.charCodeAt(0))));
-        } else {
-          const r = await fetch(CFG.remoteUrl + "?t=" + Date.now(), { cache: "no-store" });
-          if (!r.ok) return;
-          st = await r.json();
-        }
+        const st = myState(await readState());
         if (!st || typeof st.ts !== "number" || st.ts <= remoteTs) return;
-        if (st.market && st.market !== MARKET) return;
         remoteTs = st.ts;
+        if (!primed) {
+          primed = true;
+          // 첫 읽기가 낡은 ARM 이면 기준점만 잡고 대기 유지 (상주 탭이 며칠 전 ARM 으로 켜지는 것 방지)
+          if (CFG.standby && !STATE.armed && Date.now() - st.ts > 90000) {
+            log("기존 ARM 은 낡음 → 대기 유지");
+            return;
+          }
+        }
         if (st.arm && !STATE.armed) {
           if (Array.isArray(st.targets) && st.targets.length) {
             CFG.targets = st.targets.map((line) => {
