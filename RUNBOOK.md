@@ -52,6 +52,14 @@ Set-ItemProperty $k ProxyEnable 0
 - 드랍 전 점검: 두 탭(또는 실행할 탭)에서 패널 로그에 `휴대폰 트리거 대기 시작` 이 뜨는지,
   폰 ARM 후 6초 안에 `휴대폰 트리거 수신 → ARM` 이 뜨는지 확인. 안 뜨면 토큰/시장 슬롯부터 본다
 
+## 드랍 목록 수집
+
+- 패널의 **목록 직접 갱신** 버튼이 drops.gg 를 r.jina.ai 경유로 읽어 온다 (CORS 우회, 토큰 불필요)
+- 결과는 브라우저 localStorage 에 캐시되고 6시간은 그대로, 24시간 넘으면 자동으로 다시 받는다
+- `droplist.json` 은 GitHub Actions 백업 경로. 이 리포에서 스케줄러가 하루 넘게 안 붙는 일이 있어서
+  20분 크론을 1시간으로 낮추고, 안 뜨면 Actions → droplist → Run workflow 로 수동 실행한다
+- 목록은 표시·알림용이다. 감지는 스크립트가 `/pages/shop` 을 직접 폴링하므로 목록이 낡아도 드랍 자체는 돈다
+
 ## 결제수단
 
 - **KR = 카카오페이**: `#payment-tiles-More Payment Options` → kakao 타일 자동 선택. 카드 정보는 채우지 않음
