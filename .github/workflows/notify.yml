@@ -48,7 +48,7 @@ jobs:
       - name: send
         if: steps.d.outputs.send == '1'
         env:
-          TOKEN: "9299103050:AAEOzA6wPOZyYD1n-g87aqbY9qX3acOep_g"
+          TOKEN: "\${{ secrets.TG_TOKEN }}"
           CHAT: "463605526"
         run: |
           curl -sS -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
