@@ -1,8 +1,10 @@
 name: droplist
 
 on:
+  # GitHub 스케줄러가 이 리포에서 6시간 넘게 안 붙어서 20분 -> 1시간으로 낮추고,
+  # 실제 수집은 패널의 "목록 직접 갱신"(r.jina.ai 경유)이 담당한다. 이 워크플로는 백업.
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
