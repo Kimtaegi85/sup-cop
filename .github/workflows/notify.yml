@@ -1,0 +1,57 @@
+name: notify
+
+on:
+  push:
+    paths:
+      - droplist.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+
+      - name: decide
+        id: d
+        run: |
+          cur_week=$(jq -r '.week' droplist.json)
+          cur_n=$(jq -r '.items | length' droplist.json)
+          prev=$(git show HEAD^:droplist.json 2>/dev/null || echo '{}')
+          prev_week=$(printf '%s' "$prev" | jq -r '.week // 0' 2>/dev/null || echo 0)
+          echo "week=$cur_week" >> "$GITHUB_OUTPUT"
+          echo "n=$cur_n" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$cur_week" != "$prev_week" ]; then
+            echo "send=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "send=0" >> "$GITHUB_OUTPUT"
+          fi
+          echo "prev=$prev_week / cur=$cur_week"
+
+      - name: compose
+        if: steps.d.outputs.send == '1'
+        run: |
+          {
+            echo "새 드랍리스트: FW26 ${{ steps.d.outputs.week }}주차 (${{ steps.d.outputs.n }}개)"
+            echo
+            jq -r '.items[:12][] | "· " + .name' droplist.json
+            echo
+            echo "사이즈 지정하고 ARM 하세요."
+          } > text.txt
+          cat text.txt
+
+      - name: send
+        if: steps.d.outputs.send == '1'
+        env:
+          TOKEN: "9299103050:AAEOzA6wPOZyYD1n-g87aqbY9qX3acOep_g"
+          CHAT: "463605526"
+        run: |
+          curl -sS -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$CHAT" \
+            --data-urlencode "text@text.txt" \
+            --data-urlencode 'reply_markup={"inline_keyboard":[[{"text":"판넬 열기","url":"https://kimtaegi85.github.io/sup-cop/"}]]}'
