@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Supreme Drop Cop (KR/US)
 // @namespace    aside.supreme.cop
-// @version      3.0.0
+// @version      4.4.0
 // @description  슈프림 드랍 감지 -> 사이즈 선택 -> 카트 담기 -> 체크아웃 자동입력 (KR Global-e / US Shopify)
 // @match        https://shop.supreme.com/*
 // @match        https://us.supreme.com/*
 // @match        https://us-production.myshopify.com/*
 // @match        https://checkout.pci.shopifyinc.com/*
+// @match        https://checkout.shopify.com/*
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
@@ -828,15 +829,19 @@
   }
 
   async function pickShipping() {
-    const box = await waitFor("#shipping_methods, [data-shipping-method]", 20000);
+    const box = await waitFor('[id^="shipping_methods"], #shipping_methods, [data-shipping-method]', 20000);
     if (!box) { log("배송 옵션 미표시 — 주소를 확인하세요", "warn"); return false; }
-    try {
-      const row = [...box.querySelectorAll("div")]
-        .filter((d) => /standard|shipping|business days|ground/i.test(d.textContent))
-        .pop() || box;
-      row.click();
-    } catch (e) {}
-    await sleep(1500);
+    for (let tryN = 0; tryN < 6; tryN++) {
+      const row = [...box.querySelectorAll("div[class]")].find((d) => d.offsetParent && /standard|ground|business days|economy/i.test(d.textContent || ""));
+      if (row) {
+        row.click();
+        await sleep(900);
+        if (box.querySelector('[aria-checked="true"], input:checked')) break;
+      } else {
+        await sleep(700);
+      }
+    }
+    await sleep(500);
     return true;
   }
 
@@ -848,6 +853,23 @@
       const left = [...document.querySelectorAll('input[type="checkbox"][id^="custom-checkbox-"], #accept-tos')].filter((c) => !c.checked).length;
       if (!left) return;
     }
+  }
+
+  async function clickPaypalViaFrame() {
+    let clicked = false;
+    const onMsg = (ev) => { const d = ev.data; if (d && d.__cop === "paypal-clicked") clicked = true; };
+    window.addEventListener("message", onMsg);
+    try {
+      for (let i = 0; i < 10 && !clicked; i++) {
+        const frames = [...document.querySelectorAll('iframe[name*="PAYPAL"], iframe[src*="sandboxes/wallets"]')];
+        for (const f of frames) { try { f.contentWindow.postMessage({ __cop: "paypal" }, "*"); } catch (e) {} }
+        if (frames.length && i === 0) log("PayPal 버튼 클릭 요청", "q");
+        await sleep(1000);
+      }
+    } finally {
+      window.removeEventListener("message", onMsg);
+    }
+    return clicked;
   }
 
   async function selectPayment() {
@@ -915,16 +937,27 @@
       }
     }
 
-    // 주소: US 는 자동완성 콤보박스라 값을 계속 되돌린다 -> 재입력 후 blur
-    for (let i = 0; i < 4; i++) {
-      const a = await waitFor('input[name="address1"]', 4000);
-      if (!a) break;
-      setNative(a, p.address1);
-      await sleep(350);
-      if (a.value === p.address1) {
-        a.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-        a.blur();
-        break;
+    // 주소: 국가를 확정한 뒤 우편번호->도시->주->상세주소 순으로 넣고, 배송료 계산을 기다린다
+    {
+      const cc = document.querySelector('select[name="countryCode"]');
+      if (cc && cc.value !== "US") { cc.value = "US"; cc.dispatchEvent(new Event("change", { bubbles: true })); await sleep(800); }
+      const fillAddr = async () => {
+        await stick('input[name="postalCode"]', p.postalCode);
+        await stick('input[name="city"]', p.city);
+        const z = await waitFor('select[name="zone"]', 4000);
+        if (z && p.zone) { z.value = p.zone; z.dispatchEvent(new Event("change", { bubbles: true })); await sleep(200); }
+        const a1 = await waitFor('input[name="address1"]', 4000);
+        if (a1 && p.address1) {
+          for (let i = 0; i < 4; i++) { setNative(a1, p.address1); await sleep(350); if (a1.value === p.address1) break; }
+          a1.blur();
+        }
+      };
+      await fillAddr();
+      for (let i = 0; i < 3; i++) {
+        const det = document.querySelector('[id$="-details"]');
+        if (det && det.children.length) break;
+        await sleep(1500);
+        if (i === 1) await fillAddr();
       }
     }
     await stick('input[name="address2"]', p.address2);
@@ -961,14 +994,34 @@
     beep(1);
 
     if (CFG.autoSubmit) await selectPayment();
+    if (CFG.autoSubmit && MARKET === "US") {
+      const okPaypal = await clickPaypalViaFrame();
+      log(okPaypal ? "PayPal 결제창 열림" : "PayPal 버튼 못 찾음", okPaypal ? "q" : "err");
+      if (okPaypal) { beep(3); return; }
+    }
     if (!CFG.autoSubmit) return;
     await sleep(400);
     await fillCardFrame(2);
-    const pay = [...document.querySelectorAll("button")].find((b) => /process payment|pay now/i.test(b.textContent) && !b.disabled && b.offsetParent);
-    if (!pay) { log("결제 버튼 못 찾음", "err"); return; }
-    pay.click();
-    log("결제 클릭 — 3DS/앱 승인 필요할 수 있음", "q");
-    beep(3);
+    let enabledBtn = null;
+    for (let i = 0; i < 20; i++) {
+      enabledBtn = [...document.querySelectorAll("button")]
+        .filter((b) => !b.disabled && b.offsetParent && /submit|process payment|pay now|paypal|pay with/i.test(b.textContent))
+        .find((b) => getComputedStyle(b).pointerEvents !== "none");
+      if (enabledBtn) break;
+      await sleep(500);
+    }
+    const cands = [...document.querySelectorAll("button")]
+      .filter((b) => !b.disabled && b.offsetParent && /submit|process payment|pay now|paypal|pay with/i.test(b.textContent))
+      .sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+    if (enabledBtn && !cands.includes(enabledBtn)) cands.unshift(enabledBtn);
+    if (!cands.length) { log("결제 버튼 못 찾음", "err"); return; }
+    for (const b of cands) {
+      b.click();
+      log("결제 클릭: " + b.textContent.trim().slice(0, 20), "q");
+      beep(3);
+      await sleep(1500);
+      if (!location.pathname.startsWith("/checkouts/")) return;
+    }
   }
 
   /* ---------------- 텔레그램 원격 (선택) ---------------- */
@@ -1012,6 +1065,16 @@
   }
 
   /* ---------------- 실행 ---------------- */
+
+  if (HOST === "checkout.shopify.com") {
+    window.addEventListener("message", (ev) => {
+      const d = ev.data;
+      if (!d || d.__cop !== "paypal") return;
+      const b = document.querySelector("paypal-button") || document.querySelector("#paypal-button-container button");
+      if (b) { b.click(); try { parent.postMessage({ __cop: "paypal-clicked" }, "*"); } catch (e) {} }
+    });
+    return;
+  }
 
   if (IS_FRAME) {
     // 카드 입력 프레임
