@@ -2,7 +2,7 @@
  "season": "fw26",
  "week": 13,
  "upcoming": false,
- "updated": "2026-11-10T02:03:21.397Z",
+ "updated": "2026-11-10T17:46:06.981Z",
  "source": "drops.gg",
  "items": [
   {
@@ -114,6 +114,11 @@
    "name": "Supreme®/Hardcore Hammers Axe",
    "href": "/archives/fw26/week-13/supreme®-hardcore-hammers-axe",
    "img": "https://media.drops.gg/file/drops-media/datadump/fall-winter2026/SupremeHardcore%20Hammers%20Axe/image_1.jpg"
+  },
+  {
+   "name": "Supreme®/Timberland® Bandana Field Boot",
+   "href": "/archives/fw26/week-13/supreme®-timberland®-bandana-field-boot",
+   "img": "https://media.drops.gg/file/drops-media/datadump/fall-winter2026/SupremeTimberland%20Bandana%20Field%20Boot/image_1.jpg"
   }
  ]
 }
