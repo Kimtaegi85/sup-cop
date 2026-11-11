@@ -577,6 +577,9 @@ function render(){
     bd.append(t, p);
     if (group.length > 1){
       const cs = document.createElement("div"); cs.className = "chips";
+      const lab = document.createElement("b"); lab.style.cssText = "font-size:10px;color:var(--dim);align-self:center";
+      lab.textContent = "색";
+      cs.appendChild(lab);
       for (const g of group){
         const c = document.createElement("span");
         c.className = "chip col" + (g.handle === cur.handle ? " sel" : "") + (g.variants.some(v=>v.available) ? "" : " out");
