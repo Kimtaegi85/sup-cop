@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Supreme Drop Cop (KR/US)
 // @namespace    aside.supreme.cop
-// @version      4.5.0
+// @version      4.5.1
 // @description  슈프림 드랍 감지 -> 사이즈 선택 -> 카트 담기 -> 체크아웃 자동입력 (KR Global-e / US Shopify)
 // @match        https://shop.supreme.com/*
 // @match        https://us.supreme.com/*
@@ -119,6 +119,7 @@
     seen: new Set(),
     queue: 0,
     queueUntil: 0,
+    calibrated: false,
     pollTimer: null,
     logLines: [],
   };
@@ -248,6 +249,12 @@
     }
     STATE.queue = 0;
 
+    if (!STATE.calibrated) {
+      r.handles.forEach((h) => STATE.seen.add(h));
+      if (r.handles.length) { STATE.calibrated = true; log(`기준선 보정 ${r.handles.length}개`); }
+      return;
+    }
+
     const fresh = r.handles.filter((h) => !STATE.seen.has(h));
     if (fresh.length) {
       log(`신규 상품 ${fresh.length}개 감지`, "ok");
@@ -288,6 +295,24 @@
       return tg;
     }
     return null;
+  }
+
+  /* target-parse */
+  // 줄 형식: "키워드1|키워드2,사이즈1|사이즈2". 사이즈는 뒤에서부터 "사이즈처럼 생긴" 필드만 떼어낸다.
+  // 그래서 구형 "키워드1,키워드2,사이즈" 나 사이즈 생략 줄도 같은 결과가 된다.
+  const SIZE_RE = /^(?:\d{1,2}(?:\.\d)?|x{0,3}[sml]|os|one ?size|small|medium|large|x-?small|x-?large)$/i;
+  function parseTargetLine(line) {
+    const vals = String(line).split(",").map((s) => s.trim()).filter(Boolean);
+    const sizes = [];
+    while (vals.length > 1) {
+      const parts = vals[vals.length - 1].split("|").map((s) => s.trim()).filter(Boolean);
+      if (!parts.length || !parts.every((s) => SIZE_RE.test(s))) break;
+      sizes.unshift(...parts);
+      vals.pop();
+    }
+    const kw = vals.join("|").split("|").map((s) => s.trim()).filter(Boolean);
+    if (!kw.length) return null;
+    return { kw, exclude: [], sizes, qty: 1, anySize: !sizes.length };
   }
 
   function normSize(s) {
@@ -377,7 +402,9 @@
     if (CFG.preload) { preloadPage(win.h); await sleep(jit(CFG.preloadMs || 700)); }
     { const d = delayFor("atc"); if (d) await sleep(jit(d)); }
     const ok = await addToCart(win.pick.id, win.tg.qty || 1, win.h);
-    if (ok) goCheckout();
+    if (ok !== true) { if (ok) log("MCP 체크아웃으로 이동 — 폴링 종료", "q"); return; }
+    if (!STATE.armed) { log("STOP됨 — 결제로 넘어가지 않음", "warn"); return; }
+    goCheckout();
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -462,7 +489,7 @@
           location.assign(MARKET === "US" && krHost
             ? `https://us-production.myshopify.com/checkouts/cn/${m[1]}?key=${m[2]}`
             : `/checkouts/cn/${m[1]}?key=${m[2]}`);
-          return true;
+          return "nav"; // 이미 이동했으니 goCheckout 이 덮어쓰지 않게
         }
       }
       log("MCP 실패: " + JSON.stringify(body.messages || {}).slice(0, 120), "err");
@@ -542,10 +569,11 @@
       try { await fetch("/cart/clear.js", { method: "POST" }); } catch (e) {}
     }
     STATE.baseline = new Set();
-    const r = await readHandles(30);
+    const r = await readHandles(9999); // 전체 목록을 기준선으로 (일부만 잡으면 기존 재고를 드랍으로 오인한다)
     r.handles.forEach((h) => STATE.baseline.add(h));
     STATE.seen = new Set(STATE.baseline);
-    log(`기준 상품 ${STATE.baseline.size}개 기록`);
+    STATE.calibrated = r.handles.length >= 50;
+    log(`기준 상품 ${STATE.baseline.size}개 기록` + (STATE.calibrated ? "" : " — 부족, 다음 정상 응답에서 보정"));
     startPolling();
     syncArmBtn();
   }
@@ -562,6 +590,7 @@
     const next = nextDropUtc();
     const at = next - CFG.leadMs;
     const ms = at - Date.now();
+    if (ms <= 0 && ms > -3600e3) { log("드랍 시각 안 — 즉시 ARM"); arm(); return; }
     if (ms > 0 && ms < 25 * 3600e3) {
       log(`자동 ARM 예약: ${new Date(at).toLocaleString("ko-KR")}`);
       setTimeout(() => { if (CFG.autoArm) arm(); }, ms);
@@ -626,11 +655,7 @@
         }
         if (st.arm && !STATE.armed) {
           if (Array.isArray(st.targets) && st.targets.length) {
-            CFG.targets = st.targets.map((line) => {
-              const parts = String(line).split(",");
-              const sizes = (parts.pop() || "").split("|").filter(Boolean);
-              return { kw: parts.map((s) => s.trim()).filter(Boolean), sizes };
-            }).filter((t) => t.kw.length);
+            CFG.targets = st.targets.map(parseTargetLine).filter(Boolean);
             saveCfg();
             const ta = document.getElementById("cop-targets");
             if (ta) ta.value = CFG.targets.map((t) => t.kw.join(",") + "," + t.sizes.join("|")).join("\n");
@@ -743,11 +768,7 @@
     armBtn2.classList.toggle("on", CFG.autoArm);
 
     el.querySelector("#cop-save").onclick = () => {
-      CFG.targets = el.querySelector("#cop-targets").value.split("\n").map((line) => {
-        const [k, s] = line.split(",");
-        const sizes = (line.split(",")[2] || "").split("|").filter(Boolean);
-        return { kw: (k || "").split("|").filter(Boolean), exclude: [], sizes, qty: 1, anySize: !sizes.length };
-      }).filter((t) => t.kw.length);
+      CFG.targets = el.querySelector("#cop-targets").value.split("\n").map(parseTargetLine).filter(Boolean);
       const nm = el.querySelector("#cop-name").value.trim().split(/\s+/);
       CFG.profile = {
         email: el.querySelector("#cop-email").value.trim(),
@@ -944,6 +965,8 @@
     log("결제수단: " + want, "q");
   }
 
+  const SUBMIT_RE = /submit|process payment|pay now|paypal|pay with|complete order|결제|주문/i;
+
   async function runCheckoutFill() {
     log("체크아웃 자동입력 시작 (" + MARKET + ")");
     const payP = selectPayment();
@@ -975,10 +998,8 @@
       }
     }
 
-    // 주소: 국가를 확정한 뒤 우편번호->도시->주->상세주소 순으로 넣고, 배송료 계산을 기다린다
+    // 주소: 우편번호->도시->주->상세주소 순으로 넣고, 배송료 계산을 기다린다
     {
-      const cc = document.querySelector('select[name="countryCode"]');
-      if (cc && cc.value !== "US") { cc.value = "US"; cc.dispatchEvent(new Event("change", { bubbles: true })); await sleep(800); }
       const fillAddr = async () => {
         await stick('input[name="postalCode"]', p.postalCode);
         await stick('input[name="city"]', p.city);
@@ -1011,6 +1032,10 @@
 
     // 배송 조회(서버 왕복) 동안 결제수단/카드/부가정보/동의를 병렬로 밀어넣는다
     await payP;
+    if (MARKET === "US" && !document.getElementById("payment-tiles-PAYPAL_EXPRESS")) {
+      const ccTile = await waitFor("#payment-tiles-creditCards", 4000);
+      if (ccTile && !ccTile.checked) { ccTile.click(); await sleep(600); log("PayPal 타일 없음 — 카드로 진행", "warn"); }
+    }
     if (!document.getElementById("payment-tiles-creditCards")?.checked && !document.getElementById("payment-tiles-More Payment Options")?.checked) await selectPayment();
     const hasCard = !!document.getElementById("payment-tiles-creditCards")?.checked;
     const cardP = hasCard ? fillCardFrame(4) : Promise.resolve();
@@ -1043,13 +1068,13 @@
     let enabledBtn = null;
     for (let i = 0; i < 20; i++) {
       enabledBtn = [...document.querySelectorAll("button")]
-        .filter((b) => !b.disabled && b.offsetParent && /submit|process payment|pay now|paypal|pay with/i.test(b.textContent))
+        .filter((b) => !b.disabled && b.offsetParent && SUBMIT_RE.test(b.textContent))
         .find((b) => getComputedStyle(b).pointerEvents !== "none");
       if (enabledBtn) break;
       await sleep(500);
     }
     const cands = [...document.querySelectorAll("button")]
-      .filter((b) => !b.disabled && b.offsetParent && /submit|process payment|pay now|paypal|pay with/i.test(b.textContent))
+      .filter((b) => !b.disabled && b.offsetParent && SUBMIT_RE.test(b.textContent))
       .sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top);
     if (enabledBtn && !cands.includes(enabledBtn)) cands.unshift(enabledBtn);
     if (!cands.length) { log("결제 버튼 못 찾음", "err"); return; }
@@ -1059,6 +1084,8 @@
       beep(3);
       await sleep(1500);
       if (!location.pathname.startsWith("/checkouts/")) return;
+      const errEl = [...document.querySelectorAll('[role="alert"],[aria-live="assertive"]')].find((e) => e.offsetParent && e.textContent.trim());
+      if (errEl) { log("결제 오류: " + errEl.textContent.trim().slice(0, 120), "err"); beep(3); }
     }
   }
 

@@ -68,6 +68,15 @@ Set-ItemProperty $k ProxyEnable 0
   마지막 "Pay"는 PayPal 화면에서 사람이 누른다
 - US 주소는 주(2자리)·ZIP(5자리)가 맞아야 하고, 주소가 KR이면 배송수단이 안 뜬다
 
+## 패널/스크립트 고치기
+
+- 패널 HTML 원본은 `panel.src.html`. 수정한 뒤 `node scripts/build-panel.mjs` 로 index.html 을 다시 만든다
+  (매번 새 salt/IV. `index.html` 을 직접 고치면 다음 빌드에서 날아간다)
+- 타깃 줄 형식: `키워드1|키워드2,사이즈1|사이즈2` — 사이즈를 비우면 아무 사이즈나 잡는다.
+  예전 쉼표 형식(`키워드1,키워드2,사이즈`)도 그대로 읽힌다
+- 확인: `node --check dist/*.js`, `node scripts/selftest.mjs`. 배포 검증은 index.html 을 복호화해 dist 와 비교
+- `state.json` 은 `byMarket.KR` / `byMarket.US` 슬롯에 쓴다. 슬롯 없이 `market:"KR"` 만 쓰면 US 탭이 명령을 무시한다
+
 ## 하면 안 되는 것
 
 - 스토어 탭을 닫거나 백그라운드로 숨기기

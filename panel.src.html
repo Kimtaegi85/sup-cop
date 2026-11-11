@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SUPREME COP</title>
+<style>
+ :root{color-scheme:dark;--bg:#0a0a0b;--pan:#131315;--line:#26262a;--txt:#e8e8e8;--dim:#8b8b93;--ok:#37d67a;--warn:#ffb020;--err:#ff5c5c;--acc:#4c8dff}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+ .wrap{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
+ header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+ h1{font-size:13px;letter-spacing:.16em;color:var(--dim);margin:0;font-weight:700}
+ .sp{flex:1}
+ .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+ .seg button{background:#000;border:0;color:var(--dim);padding:6px 14px;font-size:12px;cursor:pointer}
+ .seg button.on{background:var(--acc);color:#fff}
+ .pill{font-size:11px;padding:3px 8px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+ .pill.ok{color:var(--ok);border-color:#1d4a32}.pill.err{color:var(--err);border-color:#4a1d1d}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+ @media(max-width:860px){.grid{grid-template-columns:1fr}}
+ section{background:var(--pan);border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-bottom:12px}
+ section h2{font-size:11px;letter-spacing:.12em;color:var(--dim);margin:0 0 10px;font-weight:700}
+ label{display:block;font-size:11px;color:var(--dim);margin:7px 0 3px}
+ input,select{width:100%;background:#000;border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 9px;font:12px/1.4 inherit}
+ button{background:#1a1a1d;border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 11px;font-size:12px;cursor:pointer}
+ button:hover{border-color:#3a3a40}
+ button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+ button.go{background:var(--ok);border-color:var(--ok);color:#04250f;font-weight:700}
+ button:disabled{opacity:.4;cursor:not-allowed}
+ .row{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+ .banner{border-radius:10px;padding:9px 12px;font-size:12px;margin-bottom:12px;display:none}
+ .banner.show{display:block}
+ .banner.bad{background:#2a1414;border:1px solid #5a2020;color:#ffb4b4}
+ .banner.info{background:#101a2a;border:1px solid #22405f;color:#bcd8ff}
+ .items{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:10px}
+ .card{background:#0e0e10;border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+ .card img{width:100%;aspect-ratio:1;object-fit:cover;background:#000;display:block}
+ .card .bd{padding:8px 9px;display:flex;flex-direction:column;gap:6px;flex:1}
+ .card .t{font-size:11.5px;line-height:1.35;font-weight:600}
+ .card .p{font-size:11px;color:var(--dim)}
+ .chips{display:flex;flex-wrap:wrap;gap:4px}
+ .chip{border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:10.5px;cursor:pointer;background:#000;color:var(--txt)}
+ .chip:hover{border-color:var(--acc)}
+ .chip.out{color:#5c5c66;border-color:#1c1c20;text-decoration:line-through;cursor:not-allowed}
+ .chip.sel{border-color:var(--acc);background:#122340;color:#cfe0ff}
+ .vid{font:10px/1.3 ui-monospace,Menlo,monospace;color:#5f5f6a;word-break:break-all}
+ #log{height:150px;overflow:auto;background:#000;border:1px solid var(--line);border-radius:8px;padding:8px;font:10.5px/1.55 ui-monospace,Menlo,monospace;color:#9fe6b4}
+ #log .e{color:var(--err)}#log .w{color:var(--warn)}#log .q{color:#7cd2ff}
+ .muted{color:var(--dim);font-size:11px}
+ .stat{display:flex;gap:14px;font-size:11px;color:var(--dim);margin-bottom:8px}
+ .stat b{color:var(--txt)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>SUPREME COP</h1>
+    <div class="seg">
+      <button id="mKR" class="on">한국</button>
+      <button id="mUS">북미</button>
+    </div>
+    <span class="pill" id="geo">확인 중</span>
+    <div class="sp"></div>
+    <span class="pill" id="pollStat">대기</span>
+    <button id="btnScript">스크립트 받기</button>
+    <button id="btnLock">잠그기</button>
+  </header>
+
+  <div class="banner" id="bnGeo"></div>
+
+  <div class="grid">
+    <section>
+      <h2>배송지 / 연락처</h2>
+      <label>이메일</label><input id="email" type="email" autocomplete="email">
+      <div class="row" style="margin-top:0">
+        <div style="flex:1"><label>성</label><input id="lastName"></div>
+        <div style="flex:1"><label>이름</label><input id="firstName"></div>
+      </div>
+      <label>국가</label>
+      <select id="country"><option value="KR">대한민국</option><option value="US">미국</option></select>
+      <label>주소</label><input id="address1">
+      <label>상세주소</label><input id="address2">
+      <div class="row" style="margin-top:0">
+        <div style="flex:1"><label>도시</label><input id="city"></div>
+        <div style="flex:1"><label id="lbZone">주/도</label><input id="zone"></div>
+      </div>
+      <label>우편번호</label><input id="postalCode">
+      <label>전화</label><input id="phone">
+    </section>
+
+    <section>
+      <h2>결제</h2>
+      <label>카드번호</label><input id="cardNumber" inputmode="numeric" autocomplete="cc-number">
+      <div class="row" style="margin-top:0">
+        <div style="flex:1"><label>만료 MM/YY</label><input id="cardExp" autocomplete="cc-exp"></div>
+        <div style="flex:1"><label>CVV</label><input id="cardCvv" inputmode="numeric"></div>
+      </div>
+      <label>카드 명의</label><input id="cardName">
+      <div id="krOnly">
+        <label>생년월일 (YYYY-MM-DD)</label><input id="dob">
+        <div class="row" style="margin-top:0">
+          <div style="flex:1"><label>PIN 앞2자리</label><input id="pin2" inputmode="numeric" maxlength="2"></div>
+          <div style="flex:2"><label>통관고유부호</label><input id="customsCode"></div>
+        </div>
+      </div>
+      <div class="row">
+        <button id="btnSave" class="primary">정보 저장</button>
+        <button id="btnFill">결제정보 지우기</button>
+      </div>
+    </section>
+  </div>
+
+  <section id="secDrop">
+    <h2 id="dropTitle">드랍 리스트 <span class="muted" id="dropMeta"></span></h2>
+    <p class="muted" id="dropNote" style="margin:0 0 8px"></p>
+    <div class="row" style="margin:0 0 10px">
+      <input id="dropSize" placeholder="사이즈 (예: L|XL, 비우면 아무거나)" style="flex:1">
+      <button id="btnDropAll">전부 타깃에 추가</button>
+    </div>
+    <div class="items" id="dropItems"><span class="muted">불러오는 중…</span></div>
+  </section>
+
+  <section id="secWin">
+    <h2>윈도우 상주 세팅 (인수인계용)</h2>
+    <p class="muted" style="margin:0 0 8px">이 PC에서 24시간 돌리기 위한 체크리스트. 순서대로 하면 된다.</p>
+    <ol class="muted" style="margin:0 0 8px;padding-left:18px;line-height:1.7">
+      <li>Chrome 설치 → Tampermonkey 설치 → <code>chrome://extensions</code> 에서 Tampermonkey <b>“Allow User Scripts”</b> 켜기 (안 켜면 스크립트가 안 돎)</li>
+      <li>이 페이지에서 <b>스크립트 받기</b> → Tampermonkey 대시보드 → 새 스크립트에 전체 붙여넣기 → 저장 → <code>@match</code> 4줄 확인</li>
+      <li>크롬 바탕화면 바로가기 → 속성 → 대상 끝에 아래 플래그 추가<br>
+        <code>--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows</code><br>
+        (백그라운드 탭 타이머가 1분으로 줄면 드랍 타이밍이 깨진다)</li>
+      <li>전원 옵션: 절전·화면 끄기 모두 <b>사용 안 함</b>, 자동 로그인 켜기, 크롬 종료 방지</li>
+      <li>이 페이지에서 배송지/카드 저장 → 휴대폰 트리거 토큰 저장 → <b>감시 시작(스크립트)</b>로 스토어 탭 생성</li>
+      <li>스토어 탭은 <b>앞에 두고</b> 다른 창을 최소화. 크롬 최소화는 타이머에 영향 없지만 탭이 숨으면 안 됨</li>
+    </ol>
+    <p class="muted" style="margin:0">드랍은 <b>목요일 11:00 뉴욕(한국 금요일 01:00)</b>. ARM은 T-5~7분(한국 00:53~00:55)에. 3DS·앱 승인은 폰으로 본인이 처리.</p>
+  </section>
+
+  <section>
+    <h2>드랍 목록</h2>
+    <div class="stat" id="stat"></div>
+    <div class="row" style="margin:0 0 10px">
+      <input id="filter" placeholder="필터 (상품명)" style="flex:1;min-width:140px">
+      <button id="btnRefresh">새로고침</button>
+      <button id="btnDropDirect">목록 직접 갱신</button>
+      <button id="btnAuto">자동 새로고침 OFF</button>
+    </div>
+    <div class="items" id="items"><span class="muted">불러오는 중…</span></div>
+  </section>
+
+  <section id="secMCP" style="display:none">
+    <h2>북미 · variant 직접 체크아웃</h2>
+    <p class="muted" style="margin:0 0 8px">미국 IP가 아니면 목록이 안 뜹니다. variant 번호를 붙여넣으면 MCP로 카트를 만들어 체크아웃까지 넘깁니다.</p>
+    <div class="row" style="margin:0">
+      <input id="manualVar" placeholder="variant id (예: 42713357091087)" style="flex:1">
+      <button id="btnMCP" class="go">MCP 체크아웃</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>감시 / 자동 구매</h2>
+    <label>타깃 (한 줄에 하나: 키워드1,키워드2,사이즈1|사이즈2 — 사이즈 비우면 아무 사이즈)</label>
+    <textarea id="targets" rows="3" style="width:100%;background:#000;border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 9px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea>
+    <div class="row">
+      <div style="flex:1"><label>담기 전 지연 (ms)</label><input id="atcDelay" type="number" value="2500"></div>
+      <div style="flex:1"><label>체크아웃 전 지연 (ms)</label><input id="chkDelay" type="number" value="2500"></div>
+      <div style="flex:1"><label>지터 (%)</label><input id="jitter" type="number" value="25"></div>
+      <div style="flex:1"><label>드랍 전 완만지연 (ms)</label><input id="rampStart" type="number" value="10000"></div>
+    </div>
+    <div class="row">
+      <button id="btnArm" class="go">감시 시작 (스크립트)</button>
+      <button id="btnWatch">패널만 감시</button>
+      <button id="btnStop">정지</button>
+    </div>
+    <label>휴대폰 트리거 (repo contents 쓰기 권한 토큰)</label>
+    <div class="row" style="margin:0 0 6px">
+      <input id="ghToken" type="password" placeholder="github_pat_..." style="flex:1">
+      <button id="btnSaveToken">저장</button>
+    </div>
+    <div class="row">
+      <button id="btnRemoteArm" class="go">휴대폰에서 ARM</button>
+      <button id="btnStandby">상주 대기 탭 열기</button>
+      <button id="btnRemoteStop">휴대폰에서 정지</button>
+    </div>
+    <p class="muted" style="margin:9px 0 0">Cybersole 권장값(Supreme): <b>T-5~7분에 시작, 지연 10초 → T-15초에 2.5초</b>, Safe Preload(대기열 있는 예약 드랍) 모드. 우리도 같은 값으로 맞췄습니다. ISP 프록시는 드랍 때 거의 안 되고 로컬 IP 2개 + 주거용 프록시가 권장입니다.<br><br>스크립트 없이도 여기서 감시하고 목표가 뜨면 결제창까지 링크로 넘길 수 있습니다. 스크립트를 쓰면 카트담기·입력·제출까지 자동입니다.</p>
+  </section>
+
+  <section>
+    <h2>로그</h2>
+    <div id="log"></div>
+  </section>
+</div>
+
+<script>
+"use strict";
+const STORE = { KR: "https://shop.supreme.com", US: "https://us.supreme.com" };
+const MCP = { US: "https://us-production.myshopify.com/api/ucp/mcp" };
+const MCP_CHECKOUT = { US: "https://us-production.myshopify.com" };
+const PROFILE_URL = "https://shopify.dev/ucp/agent-profiles/examples/2026-08-25/cart-and-checkout.json";
+const LS = "cop.app.v1";
+
+const S = {
+  market: "KR", cfg: load(), items: [], auto: null, watch: null,
+  queue: 0, busy: false, geoUS: false, sizes: {}, known: new Set(),
+};
+
+function load(){
+  try {
+    const j = JSON.parse(localStorage.getItem(LS)||"{}");
+    return Object.assign({ m:{KR:{},US:{}}, p:{KR:{},US:{}}, targets:{KR:"",US:""}, delay:{atc:2500,chk:2500,jit:25} }, j);
+  } catch { return { m:{KR:{},US:{}}, p:{KR:{},US:{}}, targets:{KR:"",US:""}, delay:{atc:2500,chk:2500,jit:25} }; }
+}
+function save(){ try { localStorage.setItem(LS, JSON.stringify(S.cfg)); } catch {} }
+
+function log(msg, cls){
+  const d = document.createElement("div");
+  d.textContent = "[" + new Date().toLocaleTimeString("ko-KR") + "] " + msg;
+  if (cls) d.className = cls;
+  const box = document.getElementById("log");
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
+  while (box.children.length > 300) box.removeChild(box.firstChild);
+}
+const sleep = (ms) => new Promise(r=>setTimeout(r,ms));
+const jit = (ms) => Math.round(ms * (1 + (Math.random()*2-1) * ((+S.cfg.delay.jit||0)/100)));
+function setPill(el, text, cls){ el.textContent = text; el.className = "pill " + (cls||""); }
+
+const F = ["email","firstName","lastName","country","address1","address2","city","zone","postalCode","phone","cardNumber","cardExp","cardCvv","cardName","dob","pin2","customsCode"];
+
+function loadForm(){
+  const m = S.cfg.m[S.market] || {}, p = S.cfg.p[S.market] || {};
+  for (const k of F){
+    const el = document.getElementById(k);
+    if (el) el.value = (m[k] !== undefined ? m[k] : (p[k] !== undefined ? p[k] : ""));
+  }
+  document.getElementById("country").value = S.market === "US" ? "US" : "KR";
+  document.getElementById("targets").value = S.cfg.targets[S.market] || "";
+  document.getElementById("atcDelay").value = S.cfg.delay.atc;
+  document.getElementById("chkDelay").value = S.cfg.delay.chk;
+  document.getElementById("jitter").value = S.cfg.delay.jit;
+  document.getElementById("krOnly").style.display = S.market === "KR" ? "" : "none";
+  document.getElementById("secMCP").style.display = S.market === "US" ? "" : "none";
+}
+function readForm(){
+  S.cfg.m[S.market] = {};
+  S.cfg.p[S.market] = {};
+  for (const k of F){
+    const v = (document.getElementById(k).value||"").trim();
+    if (/card|dob|pin2|customs/.test(k)) S.cfg.p[S.market][k] = v; else S.cfg.m[S.market][k] = v;
+  }
+  S.cfg.targets[S.market] = document.getElementById("targets").value;
+  S.cfg.delay.atc = +document.getElementById("atcDelay").value || 0;
+  S.cfg.delay.chk = +document.getElementById("chkDelay").value || 0;
+  S.cfg.delay.jit = +document.getElementById("jitter").value || 0;
+  save();
+}
+function profilePayload(){
+  const m = S.cfg.m[S.market];
+  return { email:m.email, firstName:m.firstName, lastName:m.lastName, postalCode:m.postalCode,
+           zone:m.zone, city:m.city, address1:m.address1, address2:m.address2||"", phone:m.phone };
+}
+function paymentPayload(){
+  const p = S.cfg.p[S.market];
+  return { number:(p.cardNumber||"").replace(/\s/g,""), exp:p.cardExp||"", cvv:p.cardCvv||"",
+           nameOnCard:p.cardName||"", dob:p.dob||"", pin2:p.pin2||"", customsCode:p.customsCode||"" };
+}
+
+function extractHandles(text){
+  const out = []; const re = /"handle":"([a-z0-9_-]+)"/g; let m;
+  while ((m = re.exec(text))) out.push(m[1]);
+  return out;
+}
+function looksQueued(status, text){
+  if (status === 429 || status === 503 || status === 403) return true;
+  if (!text) return false;
+  return /added to the ?queue|in the queue|high traffic|waiting room|you are in line/i.test(text.slice(0,6000));
+}
+
+async function readShopHeads(want){
+  const ctrl = new AbortController();
+  let res;
+  try {
+    res = await fetch(STORE[S.market] + "/pages/shop", { cache:"no-store", signal:ctrl.signal });
+  } catch (e) { return { handles:[], err:String(e) }; }
+  if (!res.ok) return { handles:[], status:res.status, queued: looksQueued(res.status, await res.text().catch(()=>"")) };
+  if (!res.body) return { handles: extractHandles(await res.text()) };
+  const rd = res.body.getReader(), dec = new TextDecoder();
+  let buf = "", bytes = 0;
+  try {
+    while (true){
+      const r = await rd.read();
+      if (r.done) break;
+      bytes += r.value.byteLength; buf += dec.decode(r.value, {stream:true});
+      const i = buf.indexOf('"products":[');
+      if (i > -1){
+        const hs = extractHandles(buf.slice(i));
+        if (hs.length >= (want||8)) { ctrl.abort(); return { handles: hs }; }
+      }
+      if (bytes > 400000) { ctrl.abort(); break; }
+    }
+  } catch {}
+  return { handles: extractHandles(buf) };
+}
+
+function parseVariants(html){
+  let cur = html.length;
+  for (let n=0;n<8;n++){
+    const i = html.lastIndexOf('"variants":[', cur);
+    if (i < 0) break;
+    const r = variantsAt(html, i);
+    if (r.length && r.some(v=>v.hasAvail)) return r;
+    cur = i - 1;
+  }
+  return [];
+}
+function variantsAt(html, i){
+  const tail = html.slice(i + '"variants":['.length);
+  let d=1, end=-1, inS=false, esc=false;
+  for (let k=0;k<tail.length && k<200000;k++){
+    const ch = tail[k];
+    if (inS){ if (esc) esc=false; else if (ch === "\\") esc=true; else if (ch === '"') inS=false; continue; }
+    if (ch === '"') inS=true; else if (ch === "[") d++; else if (ch === "]") { d--; if (d===0){ end=k; break; } }
+  }
+  if (end < 0) return [];
+  return tail.slice(0,end).split('{"id":').slice(1).map(c=>{
+    const id = (c.match(/^"?(\d+)/)||[])[1];
+    const title = (c.match(/"title":"([^"]*)"/) || c.match(/"public_title":"([^"]*)"/) || [])[1] || "";
+    return { id, title, available: /"available":true/.test(c), hasAvail: /"available":(true|false)/.test(c) };
+  }).filter(v=>v.id);
+}
+
+function emptyState(){ document.getElementById("dropItems").innerHTML = '<span class="muted">불러오는 중…</span>'; }
+
+const DROP_CACHE = "cop.drop.v1";
+function dropCacheGet(){ try { return JSON.parse(localStorage.getItem(DROP_CACHE) || "null"); } catch (e) { return null; } }
+function dropCacheSet(d){ try { localStorage.setItem(DROP_CACHE, JSON.stringify(d)); } catch (e) {} }
+function ageMs(d){ return Date.now() - Date.parse((d && d.updated) || 0); }
+function ageLabel(d){ const h = Math.floor(ageMs(d) / 3600e3); return h < 1 ? "방금" : h + "시간 전"; }
+
+function renderDroplist(d){
+  const meta = document.getElementById("dropMeta");
+  const title = document.getElementById("dropTitle");
+  const note = document.getElementById("dropNote");
+  meta.textContent = d.week + "주차 · " + d.items.length + "개 · " + ageLabel(d);
+  if (d.upcoming){
+    title.firstChild.textContent = "다음 드랍 예정 ";
+    note.textContent = "아직 안 나온 이번 주 리스트입니다. 필요한 것만 타깃에 넣고 사이즈를 지정하세요.";
+  } else {
+    title.firstChild.textContent = "지난 드랍 (참고) ";
+    note.textContent = "이번 주 목록은 보통 월요일 공개입니다. 아래는 직전 주차(이미 솔드아웃) 목록이라 사이즈·체크아웃 확인용으로만 쓰세요.";
+  }
+  const box = document.getElementById("dropItems");
+  box.innerHTML = "";
+  if (!d.items.length){ box.innerHTML = '<span class="muted">항목 없음</span>'; return; }
+  for (const it of d.items){
+    const c = document.createElement("div"); c.className = "card";
+    const im = document.createElement("img"); im.loading = "lazy"; im.src = it.img; im.alt = it.name;
+    const bd = document.createElement("div"); bd.className = "bd";
+    const t = document.createElement("div"); t.className = "t"; t.textContent = it.name;
+    const add = document.createElement("button"); add.textContent = "타깃 추가";
+    add.onclick = () => addTargetFromName(it.name);
+    bd.append(t, add); c.append(im, bd); box.appendChild(c);
+  }
+}
+
+// r.jina.ai 는 drops.gg 를 CORS 없이 읽어 오는 통로 (x-return-format: html)
+async function jinaGet(url){
+  const r = await fetch("https://r.jina.ai/" + url, { headers: { "x-return-format": "html" }, cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return await r.text();
+}
+
+function parseDropItems(html){
+  const out = [];
+  const re = /<a class="item-card-img-wrap" href="([^"]+)"[\s\S]{0,4000}?alt="([^"]*)"[\s\S]{0,4000}?src="([^"]+)"/g;
+  let m;
+  while ((m = re.exec(html))) { const name = m[2].trim(); if (name) out.push({ name, href: m[1], img: m[3] }); }
+  return out;
+}
+
+async function fetchDroplistDirect(){
+  const idxt = await jinaGet("https://drops.gg/droplist");
+  const weeks = [...new Set([...idxt.matchAll(/\/fw26\/week-(\d+)/g)].map((m) => +m[1]))].sort((a, b) => b - a);
+  const top = weeks.length ? weeks[0] + 1 : 0;
+  for (const w of [top, top - 1, top - 2]) {
+    if (w < 1) continue;
+    const html = await jinaGet("https://drops.gg/fw26/week-" + w);
+    const items = parseDropItems(html);
+    if (items.length) {
+      const d = { season: "fw26", week: w, upcoming: w === top, updated: new Date().toISOString(), source: "drops.gg direct", items };
+      dropCacheSet(d);
+      return d;
+    }
+  }
+  throw new Error("이번 주 리스트가 아직 없음");
+}
+
+async function loadDroplist(opts){
+  const force = !!(opts && opts.force);
+  const cache = dropCacheGet();
+  if (cache && !force) {
+    renderDroplist(cache);
+    if (ageMs(cache) < 6 * 3600e3) return;
+  } else if (!cache) {
+    emptyState();
+  }
+  let file = null;
+  try {
+    const r = await fetch("droplist.json?t=" + Date.now(), { cache: "no-store" });
+    if (r.ok) file = await r.json();
+  } catch (e) {}
+  const best = [cache, file].filter(Boolean).sort((a, b) => Date.parse(b.updated || 0) - Date.parse(a.updated || 0))[0];
+  if (best && !force) renderDroplist(best);
+  if (!force && best && ageMs(best) < 24 * 3600e3) return;
+  if (force) document.getElementById("dropItems").innerHTML = '<span class="muted">drops.gg 에서 직접 받는 중…</span>';
+  try {
+    renderDroplist(await fetchDroplistDirect());
+  } catch (e) {
+    if (!best) document.getElementById("dropItems").innerHTML = '<span class="muted">리스트 없음 (' + e.message + ')</span>';
+  }
+}
+function addTargetFromName(name){
+  const size = (document.getElementById("dropSize").value||"").trim();
+  const kw = name.replace(/®/g,"").split(/\s+/).filter(Boolean).slice(0,6).join("|");
+  if (!kw) return;
+  const ta = document.getElementById("targets");
+  const line = kw + (size ? "," + size : "");
+  ta.value = (ta.value.trim() ? ta.value.trim() + "\n" : "") + line;
+  readForm();
+  log("타깃 추가: " + name + (size ? " / " + size : ""));
+}
+
+function matchesAnyTarget(title){
+  const tl = (title||"").toLowerCase();
+  let tgs = [];
+  try { tgs = targetsParsed(); } catch {}
+  return tgs.some(t => t.kw.length && t.kw.every(k => tl.includes(k.toLowerCase())));
+}
+
+async function loadList(mode){
+  mode = mode || "diff";
+  if (S.busy) return;
+  S.busy = true;
+  try {
+    const heads = await readShopHeads(24);
+    if (heads.err && S.market === "US" && !S.geoUS){
+      setPill(document.getElementById("pollStat"), "US 불통", "err");
+      document.getElementById("items").innerHTML = '<span class="muted">미국 IP 필요 — VPN 켜고 새로고침</span>';
+      return;
+    }
+    if (heads.queued || heads.err){
+      S.queue++;
+      const back = Math.min(6000, 800 * Math.pow(1.6, S.queue)) * (1 + Math.random()*0.4);
+      setPill(document.getElementById("pollStat"), "큐/차단", "err");
+      log("큐/차단 응답 → " + Math.round(back) + "ms 후 재시도", "q");
+      await sleep(back);
+      return;
+    }
+    S.queue = 0;
+    const all = heads.handles;
+    let targets;
+    if (mode === "full" || !S.known.size){
+      S.known = new Set(all);
+      targets = all.slice(0, 40);
+      S.items = [];
+    } else {
+      const fresh = all.filter(h => !S.known.has(h));
+      for (const h of fresh) S.known.add(h);
+      const restock = S.items
+        .filter(it => !it.variants.some(v => v.available) && matchesAnyTarget(it.title))
+        .map(it => it.handle);
+      targets = fresh.slice(0, 40).concat(restock.slice(0, 6));
+      if (!targets.length){ setPill(document.getElementById("pollStat"), "정상", "ok"); return; }
+    }
+
+    let i = 0;
+    const got = [];
+    const grab = async (h) => {
+      for (let t = 0; t < 4; t++){
+        try {
+          const r = await fetch(STORE[S.market] + "/products/" + h, { cache:"no-store" });
+          if (r.status === 429 || r.status === 403) { await sleep(700 * (t+1)); continue; }
+          if (!r.ok) return;
+          const html = await r.text();
+          const title = ((html.match(/<title>([^<]*?) - Shop/i)||[])[1] || h).replace(/\s+/g," ").trim();
+          const img = (html.match(/<meta property="og:image" content="([^"]+)"/)||[])[1] || "";
+          const price = (html.match(/"price":"(\d+)"/)||[])[1] || "";
+          got.push({ handle:h, title, img, price: price ? Math.round(+price/100) : null, variants: parseVariants(html) });
+          return;
+        } catch { await sleep(700 * (t+1)); }
+      }
+    };
+    const worker = async () => { while (i < targets.length) await grab(targets[i++]); };
+    await Promise.all([worker(), worker()]);
+
+    if (got.length){
+      const map = new Map(S.items.map(it => [it.handle, it]));
+      for (const g of got) map.set(g.handle, g);
+      // 상품 목록 순서 유지 (서버 순서 기준)
+      const order = all.filter(h => map.has(h));
+      const extra = [...map.keys()].filter(h => !order.includes(h));
+      S.items = order.concat(extra).map(h => map.get(h));
+    }
+    render();
+    setPill(document.getElementById("pollStat"), "정상", "ok");
+  } finally { S.busy = false; }
+}
+
+function render(){
+  const box = document.getElementById("items");
+  const f = (document.getElementById("filter").value||"").toLowerCase();
+  const list = S.items.filter(it => !f || it.title.toLowerCase().includes(f));
+  const totalVar = S.items.reduce((a,b)=>a+b.variants.length,0);
+  const inVar = S.items.reduce((a,b)=>a+b.variants.filter(v=>v.available).length,0);
+  document.getElementById("stat").innerHTML = "<span>상품 <b>"+S.items.length+"</b></span><span>재고 사이즈 <b>"+inVar+"</b>/"+totalVar+"</span>";
+  box.innerHTML = "";
+  if (!list.length){ box.innerHTML = '<span class="muted">항목 없음</span>'; return; }
+  for (const it of list){
+    const d = document.createElement("div"); d.className = "card";
+    const im = document.createElement("img"); im.loading = "lazy"; im.src = it.img; im.alt = it.title;
+    const bd = document.createElement("div"); bd.className = "bd";
+    const t = document.createElement("div"); t.className = "t"; t.textContent = it.title;
+    const p = document.createElement("div"); p.className = "p"; p.textContent = it.price ? it.price.toLocaleString() : "";
+    const chips = document.createElement("div"); chips.className = "chips";
+    for (const v of it.variants){
+      const c = document.createElement("span");
+      c.className = "chip" + (v.available ? "" : " out");
+      c.textContent = v.title || v.id;
+      if (v.available) c.onclick = () => { S.sizes[it.handle] = v.id; render(); };
+      if (S.sizes[it.handle] === v.id) c.classList.add("sel");
+      chips.appendChild(c);
+    }
+    const vid = document.createElement("div"); vid.className = "vid";
+    const sel = it.variants.find(v=>v.id === S.sizes[it.handle]);
+    vid.textContent = sel ? "#" + sel.id : "";
+    const go = document.createElement("button"); go.className = "go"; go.textContent = "체크아웃";
+    go.disabled = !it.variants.some(v=>v.available);
+    go.onclick = () => checkout(it, sel || it.variants.find(v=>v.available));
+    bd.append(t, p, chips, vid, go);
+    d.append(im, bd); box.appendChild(d);
+  }
+}
+
+async function checkout(it, v){
+  if (!v) return;
+  log("체크아웃: " + it.title + " / " + (v.title||v.id) + " (#" + v.id + ")");
+  if (S.market === "KR" || S.geoUS){
+    window.open(STORE[S.market] + "/cart/" + v.id + ":1", "_blank");
+    return;
+  }
+  try {
+    const r = await fetch(MCP.US, {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ jsonrpc:"2.0", id:1, method:"tools/call", params:{
+        name:"create_cart", arguments:{ meta:{"ucp-agent":{profile:PROFILE_URL}},
+          cart:{ line_items:[{ item:{ id:"gid://shopify/ProductVariant/"+v.id }, quantity:1 }] } } } })
+    });
+    const j = await r.json();
+    const body = JSON.parse(j.result.content[0].text);
+    const m = body.id && body.id.match(/Cart\/([^?]+)\?key=([^&]+)/);
+    if (!m) throw new Error(JSON.stringify(body.messages||{}).slice(0,120));
+    window.open(MCP_CHECKOUT.US + "/checkouts/cn/" + m[1] + "?key=" + m[2], "_blank");
+    log("MCP 카트 생성 → 체크아웃 열림", "q");
+  } catch (e){
+    log("MCP 실패: " + e.message, "e");
+    window.open(STORE.US + "/cart/" + v.id + ":1", "_blank");
+  }
+}
+
+function normSize(x){
+  return String(x||"").toLowerCase().replace(/\s+/g,"")
+    .replace("xxlarge","xxl").replace("xlarge","xl")
+    .replace("small","s").replace("medium","m").replace("large","l");
+}
+// 줄 형식: "키워드1|키워드2,사이즈1|사이즈2". 사이즈는 뒤에서부터 사이즈처럼 생긴 필드만 떼어낸다.
+const SIZE_RE = /^(?:\d{1,2}(?:\.\d)?|x{0,3}[sml]|os|one ?size|small|medium|large|x-?small|x-?large)$/i;
+function targetsParsed(){
+  return (document.getElementById("targets").value||"").split("\n").map(l=>l.trim()).filter(Boolean).map(line=>{
+    const vals = line.split(",").map(s=>s.trim()).filter(Boolean);
+    const sizes = [];
+    while (vals.length > 1){
+      const parts = vals[vals.length-1].split("|").map(s=>s.trim()).filter(Boolean);
+      if (!parts.length || !parts.every(s=>SIZE_RE.test(s))) break;
+      sizes.unshift(...parts);
+      vals.pop();
+    }
+    const kw = vals.join("|").split("|").map(s=>s.trim()).filter(Boolean);
+    return { kw, sizes };
+  }).filter(t=>t.kw.length);
+}
+function stopAuto(){ if (S.auto) clearTimeout(S.auto); S.auto = null; }
+function stopWatch(){ S.watch = null; }
+
+function startAuto(ms){
+  stopAuto();
+  const tick = async () => { await loadList("full"); S.auto = setTimeout(tick, jit(ms)); };
+  S.auto = setTimeout(tick, 200);
+}
+
+function startWatch(){
+  const tgs = targetsParsed();
+  if (!tgs.length){ log("타깃을 먼저 입력하세요", "e"); return; }
+  log("패널 감시 시작 · 타깃 " + tgs.length + "개", "q");
+  setPill(document.getElementById("pollStat"), "감시 중", "ok");
+  stopAuto(); S.watch = false;
+  const tick = async () => {
+    await loadList("diff");
+    for (const it of S.items){
+      const tl = it.title.toLowerCase();
+      for (const t of tgs){
+        if (!t.kw.every(k=>tl.includes(k.toLowerCase()))) continue;
+        const v = it.variants.find(x=>x.available && (!t.sizes.length || t.sizes.some(s=>normSize(x.title) === normSize(s))));
+        if (!v) continue;
+        if (S.watch) return;
+        log("목표 감지: " + it.title + " / " + (v.title||v.id), "q");
+        beep();
+        await checkout(it, v);
+        S.watch = true;
+        setPill(document.getElementById("pollStat"), "감지됨", "ok");
+        return;
+      }
+    }
+    S.auto = setTimeout(tick, jit(1200));
+  };
+  S.auto = setTimeout(tick, 200);
+}
+
+function beep(){
+  try {
+    const c = new AudioContext();
+    [0,0.2,0.4].forEach((t,i)=>{ const o=c.createOscillator(), g=c.createGain(); o.connect(g); g.connect(c.destination);
+      o.frequency.value = 780 + i*160; g.gain.value = .07; o.start(c.currentTime+t); o.stop(c.currentTime+t+.1); });
+  } catch {}
+}
+
+function b64url(obj){
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let s = ""; bytes.forEach(b=>s += String.fromCharCode(b));
+  return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+function nextDropEpoch(){
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone:"America/New_York", weekday:"short", hour:"2-digit", minute:"2-digit", hour12:false });
+  let t = Date.now();
+  t -= t % 60000;   // 분 경계로 맞춰 초 오차 제거
+  for (let i = 0; i < 60*24*9; i++){
+    const p = {};
+    for (const part of fmt.formatToParts(new Date(t))) p[part.type] = part.value;
+    if (p.weekday === "Thu" && p.hour === "11" && p.minute === "00") return t;
+    t += 60000;
+  }
+  return 0;
+}
+
+async function ghWriteState(arm){
+  const t = localStorage.getItem("cop.ghToken");
+  if (!t){ log("GitHub 토큰을 먼저 저장하세요", "e"); return; }
+  const api = "https://api.github.com/repos/Kimtaegi85/sup-cop/contents/state.json";
+  const h = { authorization: "Bearer " + t, accept: "application/vnd.github+json" };
+  try {
+    const g = await fetch(api + "?t=" + Date.now(), { headers: h });
+    let sha, byMarket = {};
+    if (g.ok) {
+      const cur = await g.json();
+      sha = cur.sha;
+      try {
+        const prev = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob((cur.content || "").replace(/\n/g, "")), c => c.charCodeAt(0))));
+        if (prev && prev.byMarket) byMarket = prev.byMarket;
+      } catch (e) {}
+    }
+    const now = Date.now();
+    byMarket[S.market] = { arm, ts: now };
+    // 구형 단일 슬롯도 최신 값으로 맞춰 둔다 (낡은 스크립트 호환)
+    const targets = arm ? (document.getElementById("targets").value || "").split("\n").map(s => s.trim()).filter(Boolean) : [];
+    const payload = JSON.stringify({ arm, market: S.market, ts: now, byMarket, targets });
+    const bytes = new TextEncoder().encode(payload);
+    let bin = ""; bytes.forEach(b => bin += String.fromCharCode(b));
+    const r = await fetch(api, {
+      method: "PUT",
+      headers: Object.assign({ "content-type": "application/json" }, h),
+      body: JSON.stringify(Object.assign({ message: "state: " + (arm ? "arm" : "stop"), content: btoa(bin) }, sha ? { sha } : {}))
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    log("휴대폰 트리거 전송: " + (arm ? "ARM" : "STOP") + " (" + S.market + ")");
+  } catch (e) { log("트리거 실패: " + e.message, "e"); }
+}
+
+function standbyTab(){
+  readForm();
+  if (!localStorage.getItem("cop.ghToken")) { log("토큰을 먼저 저장하세요 (대기 모드는 토큰 필요)", "e"); return; }
+  const payload = {
+    profile: profilePayload(), payment: paymentPayload(),
+    targets: targetsParsed().map(t=>({ kw:t.kw, exclude:[], sizes:t.sizes, qty:1, anySize:!t.sizes.length })),
+    autoSubmit: true, remote: true, standby: true, ghToken: localStorage.getItem("cop.ghToken"),
+    preload: true, atcDelayMs: +document.getElementById("rampStart").value || 10000,
+    checkoutDelayMs: 10000, atcDelayFastMs: +S.cfg.delay.atc, checkoutDelayFastMs: +S.cfg.delay.chk,
+    rampAtMs: Math.max(0, nextDropEpoch() - 15000), jitter: (+S.cfg.delay.jit)/100,
+  };
+  window.open(STORE[S.market] + "/pages/shop#cop=" + b64url(payload), "_blank");
+  log("상주 대기 탭 생성 — ARM 은 휴대폰에서");
+}
+
+function armWithScript(){
+  readForm();
+  const tgs = targetsParsed();
+  if (!tgs.length){ log("타깃을 먼저 입력하세요", "e"); return; }
+  if (!S.cfg.m[S.market].email){ log("이메일을 입력하세요", "e"); return; }
+  const payload = {
+    profile: profilePayload(), payment: paymentPayload(),
+    targets: tgs.map(t=>({ kw:t.kw, exclude:[], sizes:t.sizes, qty:1, anySize:!t.sizes.length })),
+    autoSubmit: true, jitter: (+S.cfg.delay.jit)/100,
+    atcDelayMs: +document.getElementById("rampStart").value || 10000,
+    checkoutDelayMs: +document.getElementById("rampStart").value || 10000,
+    atcDelayFastMs: +S.cfg.delay.atc, checkoutDelayFastMs: +S.cfg.delay.chk,
+    rampAtMs: Math.max(0, nextDropEpoch() - 15000),
+    remote: !!localStorage.getItem('cop.ghToken'), ghToken: localStorage.getItem('cop.ghToken') || '',
+  };
+  window.open(STORE[S.market] + "/pages/shop#cop=" + b64url(payload), "_blank");
+  log("스토어 탭 열고 설정 전달", "q");
+}
+
+async function setMarket(m){
+  readForm();
+  S.market = m;
+  S.items = []; S.sizes = {}; S.watch = null; S.known = new Set();
+  document.getElementById("mKR").className = m === "KR" ? "on" : "";
+  document.getElementById("mUS").className = m === "US" ? "on" : "";
+  document.getElementById("lbZone").textContent = m === "KR" ? "주/도 코드" : "주 (예: DE)";
+  document.getElementById("zone").placeholder = m === "KR" ? "KR-11" : "DE";
+  loadForm(); stopAuto(); stopWatch(); render();
+  await detectGeo();
+  document.getElementById("items").innerHTML = '<span class="muted">불러오는 중…</span>';
+  await loadList("full");
+}
+
+async function detectGeo(){
+  const bn = document.getElementById("bnGeo");
+  bn.className = "banner";
+  if (S.market === "KR"){ setPill(document.getElementById("geo"), "KR 스토어", "ok"); S.geoUS = false; return; }
+  setPill(document.getElementById("geo"), "확인 중…");
+  try {
+    const r = await fetch("https://us.supreme.com/meta.json?x=" + Date.now(), { cache:"no-store" });
+    const j = await r.json();
+    if ((j.ships_to_countries||[]).includes("US")){ S.geoUS = true; setPill(document.getElementById("geo"), "US 직결", "ok"); }
+    else {
+      S.geoUS = false;
+      setPill(document.getElementById("geo"), "KR 우회 중", "err");
+      bn.className = "banner bad show";
+      bn.textContent = "지금 IP는 미국이 아니라 us.supreme.com 이 한국 스토어로 넘어갑니다. 미국 VPN을 켜고 새로고침하세요. (목록이 안 뜨고, 체크아웃만 MCP로 우회됩니다)";
+    }
+  } catch {
+    S.geoUS = false;
+    setPill(document.getElementById("geo"), "US 불통", "err");
+    bn.className = "banner bad show";
+    bn.textContent = "us.supreme.com 이 응답을 막았습니다(한국 IP 리다이렉트). 미국 VPN을 켜고 새로고침하면 목록이 뜹니다. 지금도 variant 번호를 직접 넣으면 MCP 체크아웃은 됩니다.";
+  }
+}
+
+document.getElementById("mKR").onclick = () => setMarket("KR");
+{ const tk = localStorage.getItem("cop.ghToken"); if (tk) document.getElementById("ghToken").value = tk; }
+setMarket("KR");
+(async () => {
+  for (let t = 0; t < 5; t++){
+    await sleep(1200 + t * 1200);
+    if (S.items.length) return;
+    await loadList("full");
+  }
+})();
+document.getElementById("mUS").onclick = () => setMarket("US");
+document.getElementById("btnRefresh").onclick = () => loadList("full");
+document.getElementById("btnDropDirect").onclick = () => loadDroplist({ force: true });
+document.getElementById("filter").oninput = () => render();
+document.getElementById("btnSave").onclick = () => { readForm(); log("저장됨"); };
+document.getElementById("btnFill").onclick = () => { S.cfg.p[S.market] = {}; save(); loadForm(); log("결제정보 지움"); };
+document.getElementById("btnAuto").onclick = (e) => {
+  if (S.auto){ stopAuto(); e.target.textContent = "자동 새로고침 OFF"; }
+  else { e.target.textContent = "자동 새로고침 ON"; startAuto(4000); }
+};
+document.getElementById("btnMCP").onclick = () => {
+  const raw = (document.getElementById("manualVar").value||"").match(/\d{8,}/);
+  if (!raw) { log("variant 번호를 넣으세요", "e"); return; }
+  checkout({ title: "수동", variants: [] }, { id: raw[0], title: "" });
+};
+document.getElementById("btnDropAll").onclick = () => {
+  const cards = [...document.querySelectorAll("#dropItems .card .t")].map(e=>e.textContent);
+  if (!cards.length) { log("리스트가 없습니다", "e"); return; }
+  cards.forEach(addTargetFromName);
+};
+document.getElementById("btnSaveToken").onclick = () => {
+  const v = document.getElementById("ghToken").value.trim();
+  if (v) { localStorage.setItem("cop.ghToken", v); log("토큰 저장됨"); } else { localStorage.removeItem("cop.ghToken"); log("토큰 삭제됨"); }
+};
+document.getElementById("btnStandby").onclick = standbyTab;
+document.getElementById("btnRemoteArm").onclick = () => ghWriteState(true);
+document.getElementById("btnRemoteStop").onclick = () => ghWriteState(false);
+document.getElementById("btnArm").onclick = armWithScript;
+document.getElementById("btnWatch").onclick = startWatch;
+document.getElementById("btnStop").onclick = () => { stopAuto(); stopWatch(); setPill(document.getElementById("pollStat"), "정지", ""); log("정지"); };
+document.getElementById("btnLock").onclick = () => { sessionStorage.clear(); location.reload(); };
+document.getElementById("btnScript").onclick = () => {
+  const code = window.__CODE__ || "";
+  if (!code) { log("스크립트가 없습니다", "e"); return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+  a.download = "supreme-cop.user.js"; a.click();
+};
+
+loadDroplist();
+{ const tk = localStorage.getItem("cop.ghToken"); if (tk) document.getElementById("ghToken").value = tk; }
+setMarket("KR");
+(async () => {
+  for (let t = 0; t < 5; t++){
+    await sleep(1200 + t * 1200);
+    if (S.items.length) return;
+    await loadList("full");
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Sup-Cop panel: checkout as popup + 미정 + 새로고침 보존
 // @namespace    aside.supreme.cop
-// @version      2.4.0
+// @version      2.5.0
 // @description  체크아웃 버튼을 팝업으로, 빈 칸은 미정으로, 새로고침 시 저장값 유지
 // @match        https://kimtaegi85.github.io/sup-cop/*
 // @run-at       document-start
@@ -161,43 +161,6 @@
       b.textContent = "ARM — 이 PC에서 실행";
       b.onclick = () => window.ghWriteState && window.ghWriteState(true);
     }, 400);
-  })();
-
-  /* 7) ghWriteState 재정의: 타깃까지 함께 전송 */
-  (() => {
-    const install = () => {
-      window.ghWriteState = async function (arm) {
-        const get = () => localStorage.getItem("cop.ghToken");
-        if (!get()) {
-          const v = prompt("GitHub 토큰(github_pat_...)을 한 번만 붙여넣으세요");
-          if (!v) return;
-          localStorage.setItem("cop.ghToken", v.trim());
-        }
-        const t = get();
-        const api = "https://api.github.com/repos/Kimtaegi85/sup-cop/contents/state.json";
-        const h = { authorization: "Bearer " + t, accept: "application/vnd.github+json" };
-        try {
-          const g = await fetch(api + "?t=" + Date.now(), { headers: h });
-          const sha = g.ok ? (await g.json()).sha : undefined;
-          const lines = arm
-            ? (document.getElementById("targets").value || "").split("\n").map((s) => s.trim()).filter(Boolean)
-            : [];
-          const payload = JSON.stringify({ arm: arm, market: "KR", targets: lines, ts: Date.now() });
-          const bytes = new TextEncoder().encode(payload);
-          let bin = "";
-          bytes.forEach((b) => { bin += String.fromCharCode(b); });
-          const r = await fetch(api, {
-            method: "PUT",
-            headers: Object.assign({ "content-type": "application/json" }, h),
-            body: JSON.stringify({ message: "state " + (arm ? "ARM" : "STOP"), content: btoa(bin), sha: sha }),
-          });
-          const lg = document.getElementById("log");
-          if (lg) lg.insertAdjacentText("beforeend", "\n[" + new Date().toLocaleTimeString("ko-KR") + "] 원격 " + (arm ? "ARM" : "STOP") + (r.ok ? " 전송됨" : " 실패"));
-        } catch (e) {}
-      };
-    };
-    if (document.readyState === "loading") addEventListener("DOMContentLoaded", () => setTimeout(install, 300));
-    else setTimeout(install, 300);
   })();
 
   /* 8) 빈 칸은 미정 */
