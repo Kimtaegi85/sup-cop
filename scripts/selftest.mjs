@@ -11,17 +11,10 @@ const build = (src, re, name) => {
   return new Function(m[0] + `\nreturn ${name};`)();
 };
 const parseUs = build(us, /\/\* target-parse \*\/[\s\S]*?\n  }\n/, "parseTargetLine");
-const parsePh = build(ph, /const SIZE_RE = [^\n]*\nfunction targetsParsed\(\)\{[\s\S]*?\n\}/, "targetsParsed");
-const outPh = (line) => {
-  // 패널 함수는 textarea DOM 을 읽으므로 최소 스텁을 준다
-  return parsePh.call({});
-};
+const parsePh = build(ph, /const SIZE_RE[\s\S]*?function parseTgt\(line\)\{[\s\S]*?\n\}/, "parseTgt");
 
-// 패널 버전은 document.getElementById("targets").value 를 읽는다
-const withDoc = (fn, line) => {
-  globalThis.document = { getElementById: () => ({ value: line }) };
-  return fn();
-};
+
+
 
 const cases = [
   ["nike|air force,10.5", ["nike", "air force"], ["10.5"]],
@@ -38,7 +31,7 @@ const cases = [
 for (const [line, kw, sizes] of cases) {
   const a = parseUs(line);
   assert.deepEqual(a && { kw: a.kw, sizes: a.sizes }, { kw, sizes }, "us: " + line);
-  const p = withDoc(parsePh, line)[0];
+  const p = parsePh(line);
   assert.deepEqual(p && { kw: p.kw, sizes: p.sizes }, { kw, sizes }, "panel: " + line);
 }
 assert.equal(parseUs(""), null);
@@ -46,6 +39,14 @@ assert.equal(parseUs(",,"), null);
 assert.equal(parseUs("nike|air force,10.5").anySize, false);
 assert.equal(parseUs("nike air force").anySize, true);
 assert.equal(parseUs("tee,xl").sizes[0], "xl");
+
+// 핸들(색) 그룹: 세미콜론 3그룹 형식
+const h1 = parseUs("nike|air force;ucf-bzl-ulzmtfi;10.5");
+assert.deepEqual({ kw: h1.kw, h: h1.handles, s: h1.sizes }, { kw: ["nike", "air force"], h: ["ucf-bzl-ulzmtfi"], s: ["10.5"] });
+const h2 = parseUs("box;h1|h2");
+assert.deepEqual({ h: h2.handles, s: h2.sizes, any: h2.anySize }, { h: ["h1", "h2"], s: [], any: true });
+assert.equal(h2.kw[0], "box");
+assert.equal(parseUs(";;10.5"), null); // 그룹만 있고 키워드/핸들 없음
 
 // 직렬화 왕복 (renderPanel 이 쓰는 형식)
 for (const [line] of cases) {

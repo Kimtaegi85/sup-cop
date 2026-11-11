@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Supreme Drop Cop (KR/US)
 // @namespace    aside.supreme.cop
-// @version      4.5.1
+// @version      4.6.0
 // @description  슈프림 드랍 감지 -> 사이즈 선택 -> 카트 담기 -> 체크아웃 자동입력 (KR Global-e / US Shopify)
 // @match        https://shop.supreme.com/*
 // @match        https://us.supreme.com/*
@@ -286,34 +286,49 @@
 
   /* ---------------- 2~4. 매칭 / 담기 / 이동 ---------------- */
 
-  function matchTarget(title) {
+  function matchTarget(title, handle) {
     const t = (title || "").toLowerCase();
     for (const tg of CFG.targets) {
+      if (tg.exclude && tg.exclude.some((k) => t.includes(k.toLowerCase()))) continue;
+      if (tg.handles && tg.handles.length) {          // 핸들 타깃: 그 상품(색) 그대로
+        if (handle && tg.handles.includes(handle)) return tg;
+        continue;
+      }
       if (!tg.kw || !tg.kw.length) continue;
       if (!tg.kw.every((k) => t.includes(k.toLowerCase()))) continue;
-      if (tg.exclude && tg.exclude.some((k) => t.includes(k.toLowerCase()))) continue;
       return tg;
     }
     return null;
   }
 
   /* target-parse */
-  // 줄 형식: "키워드1|키워드2,사이즈1|사이즈2". 사이즈는 뒤에서부터 "사이즈처럼 생긴" 필드만 떼어낸다.
-  // 그래서 구형 "키워드1,키워드2,사이즈" 나 사이즈 생략 줄도 같은 결과가 된다.
+  // 줄 형식: "키워드1|키워드2;핸들1|핸들2;사이즈1|사이즈2" (세미콜론 3그룹, 빈 그룹 허용)
+  // 핸들이 있으면 그 상품(=색)만 잡고, 없으면 키워드로 제목을 본다. 구형 "키워드,사이즈" 줄도 읽는다.
   const SIZE_RE = /^(?:\d{1,2}(?:\.\d)?|x{0,3}[sml]|os|one ?size|small|medium|large|x-?small|x-?large)$/i;
   function parseTargetLine(line) {
-    const vals = String(line).split(",").map((s) => s.trim()).filter(Boolean);
-    const sizes = [];
-    while (vals.length > 1) {
-      const parts = vals[vals.length - 1].split("|").map((s) => s.trim()).filter(Boolean);
-      if (!parts.length || !parts.every((s) => SIZE_RE.test(s))) break;
-      sizes.unshift(...parts);
-      vals.pop();
+    const raw = String(line || "");
+    let kwStr = raw, hStr = "", sizeStr = "";
+    if (raw.includes(";")) {
+      const g = raw.split(";");
+      kwStr = g[0] || ""; hStr = g[1] || ""; sizeStr = g[2] || "";
+    } else {
+      const vals = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      const tail = [];
+      while (vals.length > 1) {
+        const parts = vals[vals.length - 1].split("|").map((s) => s.trim()).filter(Boolean);
+        if (!parts.length || !parts.every((s) => SIZE_RE.test(s))) break;
+        tail.unshift(...parts);
+        vals.pop();
+      }
+      kwStr = vals.join("|");
+      sizeStr = tail.join("|");
     }
-    const kw = vals.join("|").split("|").map((s) => s.trim()).filter(Boolean);
-    if (!kw.length) return null;
-    return { kw, exclude: [], sizes, qty: 1, anySize: !sizes.length };
+    const list = (s) => s.split("|").map((x) => x.trim()).filter(Boolean);
+    const kw = list(kwStr), handles = list(hStr), sizes = list(sizeStr);
+    if (!kw.length && !handles.length) return null;
+    return { kw, handles, sizes, exclude: [], qty: 1, anySize: !sizes.length };
   }
+  const lineOfTarget = (t) => [(t.kw || []).join("|"), (t.handles || []).join("|"), (t.sizes || []).join("|")].join(";");
 
   function normSize(s) {
     return String(s || "").toLowerCase().replace(/\s+/g, "").replace("xlarge", "xl")
@@ -384,7 +399,7 @@
           const html = await res.text();
           if (looksQueued(res.status, html)) { log("상품페이지 큐 응답, 재시도 대기", "q"); await sleep(600); continue; }
           const title = (html.match(/<title>([^<]*?) - Shop/i) || [])[1] || "";
-          const tg = matchTarget(title);
+          const tg = matchTarget(title, h);
           if (!tg) continue;
           const variants = parseVariants(html);
           const pick = chooseVariant(variants, tg);
@@ -398,11 +413,19 @@
     await Promise.all([worker(), worker(), worker(), worker(), worker()]);
 
     if (!tgHits.length) { log("매칭 결과 없음", "warn"); return; }
-    const win = tgHits[0];
-    if (CFG.preload) { preloadPage(win.h); await sleep(jit(CFG.preloadMs || 700)); }
-    { const d = delayFor("atc"); if (d) await sleep(jit(d)); }
-    const ok = await addToCart(win.pick.id, win.tg.qty || 1, win.h);
-    if (ok !== true) { if (ok) log("MCP 체크아웃으로 이동 — 폴링 종료", "q"); return; }
+    // 여러 타깃이 동시에 걸리면 타깃 순서(=우선순위)대로 모두 담고, 체크아웃은 마지막에 한 번만
+    const wins = tgHits
+      .sort((a, b) => CFG.targets.indexOf(a.tg) - CFG.targets.indexOf(b.tg))
+      .slice(0, 3);
+    let added = 0;
+    for (const win of wins) {
+      if (CFG.preload) { preloadPage(win.h); await sleep(jit(CFG.preloadMs || 700)); }
+      { const d = delayFor("atc"); if (d) await sleep(jit(d)); }
+      const ok = await addToCart(win.pick.id, win.tg.qty || 1, win.h);
+      if (ok === "nav") { log("MCP 체크아웃으로 이동 — 폴링 종료", "q"); return; }
+      if (ok === true) added++;
+    }
+    if (!added) return;
     if (!STATE.armed) { log("STOP됨 — 결제로 넘어가지 않음", "warn"); return; }
     goCheckout();
   }
@@ -658,7 +681,7 @@
             CFG.targets = st.targets.map(parseTargetLine).filter(Boolean);
             saveCfg();
             const ta = document.getElementById("cop-targets");
-            if (ta) ta.value = CFG.targets.map((t) => t.kw.join(",") + "," + t.sizes.join("|")).join("\n");
+            if (ta) ta.value = CFG.targets.map(lineOfTarget).join("\n");
             log("휴대폰 타깃 " + CFG.targets.length + "개 적용", "q");
           }
           log("휴대폰 트리거 수신 → ARM", "q");
@@ -702,7 +725,7 @@
     el.innerHTML = `
       <div class="hd"><b>SUPREME COP</b><span id="cop-market" style="font-size:10px;padding:1px 5px;border-radius:4px;background:#333">—</span><button id="cop-min">–</button></div>
       <div class="bd">
-        <label>타깃 (한 줄에 하나 · "키워드1,키워드2,사이즈1|사이즈2")</label>
+        <label>타깃 (한 줄에 하나 · "키워드;핸들;사이즈" — 핸들 있으면 그 색만)</label>
         <textarea id="cop-targets" rows="3"></textarea>
         <label>이메일</label><input id="cop-email" type="text">
         <label>성 / 이름</label><input id="cop-name" type="text" placeholder="Kim Taeki">
@@ -743,7 +766,7 @@
       const z = el.querySelector("#cop-zone");
       if (z && !z.value) z.value = "";
     }
-    const tg = CFG.targets.map((t) => `${t.kw.join(",")},${(t.sizes || []).join("|")}`).join("\n");
+    const tg = CFG.targets.map(lineOfTarget).join("\n");
     el.querySelector("#cop-targets").value = tg;
     el.querySelector("#cop-email").value = CFG.profile.email;
     el.querySelector("#cop-name").value = [CFG.profile.lastName, CFG.profile.firstName].filter(Boolean).join(" ");

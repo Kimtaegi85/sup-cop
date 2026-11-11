@@ -44,6 +44,13 @@
  .chip:hover{border-color:var(--acc)}
  .chip.out{color:#5c5c66;border-color:#1c1c20;text-decoration:line-through;cursor:not-allowed}
  .chip.sel{border-color:var(--acc);background:#122340;color:#cfe0ff}
+ .chip.col{font-weight:700}
+ .card .ft{display:flex;gap:6px;margin-top:auto}
+ .card .ft button{flex:1;padding:6px 4px;font-size:11px}
+ .tgt{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
+ .tgt .chip{cursor:default}
+ .tgt .chip b{color:var(--acc)}
+ .tgt .chip span{cursor:pointer;color:#888;margin-left:4px}
  .vid{font:10px/1.3 ui-monospace,Menlo,monospace;color:#5f5f6a;word-break:break-all}
  #log{height:150px;overflow:auto;background:#000;border:1px solid var(--line);border-radius:8px;padding:8px;font:10.5px/1.55 ui-monospace,Menlo,monospace;color:#9fe6b4}
  #log .e{color:var(--err)}#log .w{color:var(--warn)}#log .q{color:#7cd2ff}
@@ -115,8 +122,9 @@
     <h2 id="dropTitle">드랍 리스트 <span class="muted" id="dropMeta"></span></h2>
     <p class="muted" id="dropNote" style="margin:0 0 8px"></p>
     <div class="row" style="margin:0 0 10px">
-      <input id="dropSize" placeholder="사이즈 (예: L|XL, 비우면 아무거나)" style="flex:1">
-      <button id="btnDropAll">전부 타깃에 추가</button>
+      <input id="dropSize" placeholder="기본 사이즈 (예: L, 비우면 아무거나)" style="flex:1">
+      <button id="btnDropAll" class="primary">선택한 것 전부 타깃 추가</button>
+      <button id="btnSelClear">선택 해제</button>
     </div>
     <div class="items" id="dropItems"><span class="muted">불러오는 중…</span></div>
   </section>
@@ -160,7 +168,9 @@
 
   <section>
     <h2>감시 / 자동 구매</h2>
-    <label>타깃 (한 줄에 하나: 키워드1,키워드2,사이즈1|사이즈2 — 사이즈 비우면 아무 사이즈)</label>
+    <label>타깃 — 카드에서 색/사이즈를 골라 추가하면 아래에 쌓인다. 직접 고쳐도 된다.</label>
+    <div class="tgt" id="tgtChips"></div>
+    <div class="muted" style="font-size:11px;margin:0 0 4px">줄 형식: <code>키워드1|키워드2;핸들;사이즈1|사이즈2</code> — 핸들이 있으면 그 색만, 사이즈 비우면 아무 사이즈.</div>
     <textarea id="targets" rows="3" style="width:100%;background:#000;border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:7px 9px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea>
     <div class="row">
       <div style="flex:1"><label>담기 전 지연 (ms)</label><input id="atcDelay" type="number" value="2500"></div>
@@ -202,7 +212,7 @@ const LS = "cop.app.v1";
 
 const S = {
   market: "KR", cfg: load(), items: [], auto: null, watch: null,
-  queue: 0, busy: false, geoUS: false, sizes: {}, known: new Set(),
+  queue: 0, busy: false, geoUS: false, known: new Set(), pick: {},
 };
 
 function load(){
@@ -240,6 +250,7 @@ function loadForm(){
   document.getElementById("jitter").value = S.cfg.delay.jit;
   document.getElementById("krOnly").style.display = S.market === "KR" ? "" : "none";
   document.getElementById("secMCP").style.display = S.market === "US" ? "" : "none";
+  renderTgtChips();
 }
 function readForm(){
   S.cfg.m[S.market] = {};
@@ -270,6 +281,22 @@ function extractHandles(text){
   while ((m = re.exec(text))) out.push(m[1]);
   return out;
 }
+// 같은 style = 같은 상품의 다른 색. 색은 별도 상품이라 제목이 아니라 핸들로 묶는다.
+// 목록 HTML 의 <script id="products-json"> 안 배열만 골라 읽는다 (앞쪽 "products" 배열은 제목이 null).
+// 잘린 버퍼여도 완결된 객체만 걸리므로 안전하다.
+function extractProducts(text){
+  const tag = text.indexOf('id="products-json"');
+  if (tag < 0) return [];
+  const body = text.slice(text.indexOf(">", tag) + 1);
+  const re = /"title":"([^"]*)","handle":"([a-z0-9_-]+)","url":\s*"\/products\/[a-z0-9_-]+","product_type":"[^"]*","color":"([^"]*)","style":"([^"]*)"/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(body))) {
+    out.push({ title: m[1].replace(/\\\//g, "/"), handle: m[2], color: m[3], style: m[4] });
+  }
+  return out;
+}
+
 function looksQueued(status, text){
   if (status === 429 || status === 503 || status === 403) return true;
   if (!text) return false;
@@ -283,7 +310,7 @@ async function readShopHeads(want){
     res = await fetch(STORE[S.market] + "/pages/shop", { cache:"no-store", signal:ctrl.signal });
   } catch (e) { return { handles:[], err:String(e) }; }
   if (!res.ok) return { handles:[], status:res.status, queued: looksQueued(res.status, await res.text().catch(()=>"")) };
-  if (!res.body) return { handles: extractHandles(await res.text()) };
+  if (!res.body) { const t = await res.text(); return { handles: extractHandles(t), prods: extractProducts(t) }; }
   const rd = res.body.getReader(), dec = new TextDecoder();
   let buf = "", bytes = 0;
   try {
@@ -293,13 +320,15 @@ async function readShopHeads(want){
       bytes += r.value.byteLength; buf += dec.decode(r.value, {stream:true});
       const i = buf.indexOf('"products":[');
       if (i > -1){
-        const hs = extractHandles(buf.slice(i));
-        if (hs.length >= (want||8)) { ctrl.abort(); return { handles: hs }; }
+        const part = buf.slice(i);
+        const hs = extractHandles(part);
+        // products-json 이 아직 안 왔으면 메타가 비므로 그때까지 더 읽는다
+        if (hs.length >= (want||8) && buf.includes('id="products-json"')) { ctrl.abort(); return { handles: hs, prods: extractProducts(part) }; }
       }
       if (bytes > 400000) { ctrl.abort(); break; }
     }
   } catch {}
-  return { handles: extractHandles(buf) };
+  return { handles: extractHandles(buf), prods: extractProducts(buf) };
 }
 
 function parseVariants(html){
@@ -419,15 +448,14 @@ async function loadDroplist(opts){
     if (!best) document.getElementById("dropItems").innerHTML = '<span class="muted">리스트 없음 (' + e.message + ')</span>';
   }
 }
-function addTargetFromName(name){
-  const size = (document.getElementById("dropSize").value||"").trim();
-  const kw = name.replace(/®/g,"").split(/\s+/).filter(Boolean).slice(0,6).join("|");
-  if (!kw) return;
-  const ta = document.getElementById("targets");
-  const line = kw + (size ? "," + size : "");
-  ta.value = (ta.value.trim() ? ta.value.trim() + "\n" : "") + line;
-  readForm();
-  log("타깃 추가: " + name + (size ? " / " + size : ""));
+function kwOf(name){
+  return name.replace(/®/g,"").replace(/\s+/g," ").trim().toLowerCase().split(" ").filter(Boolean).slice(0,6).join("|");
+}
+function addTargetFromName(name, handle){
+  const size = (document.getElementById("dropSize").value||"").trim().replace(/\|/g,"|");
+  const kw = kwOf(name);
+  if (!kw && !handle) return;
+  addTargetLine([kw, handle || "", size].join(";"));
 }
 
 function matchesAnyTarget(title){
@@ -458,6 +486,7 @@ async function loadList(mode){
     }
     S.queue = 0;
     const all = heads.handles;
+    const meta = new Map((heads.prods || []).map(p => [p.handle, p]));
     let targets;
     if (mode === "full" || !S.known.size){
       S.known = new Set(all);
@@ -482,10 +511,12 @@ async function loadList(mode){
           if (r.status === 429 || r.status === 403) { await sleep(700 * (t+1)); continue; }
           if (!r.ok) return;
           const html = await r.text();
-          const title = ((html.match(/<title>([^<]*?) - Shop/i)||[])[1] || h).replace(/\s+/g," ").trim();
+          const info = meta.get(h) || {};
+          const title = (info.title || (html.match(/<title>([^<]*?) - Shop/i)||[])[1] || h).replace(/\s+/g," ").trim();
           const img = (html.match(/<meta property="og:image" content="([^"]+)"/)||[])[1] || "";
           const price = (html.match(/"price":"(\d+)"/)||[])[1] || "";
-          got.push({ handle:h, title, img, price: price ? Math.round(+price/100) : null, variants: parseVariants(html) });
+          got.push({ handle:h, title, color: info.color || "", style: info.style || h,
+                     img, price: price ? Math.round(+price/100) : null, variants: parseVariants(html) });
           return;
         } catch { await sleep(700 * (t+1)); }
       }
@@ -506,39 +537,89 @@ async function loadList(mode){
   } finally { S.busy = false; }
 }
 
+// 같은 style 끼리 묶고 핸들 중복은 버린다
+function groupByStyle(list){
+  const groups = new Map();
+  for (const it of list){
+    const k = it.style || it.handle;
+    if (!groups.has(k)) groups.set(k, new Map());
+    const g = groups.get(k);
+    if (!g.has(it.handle)) g.set(it.handle, it);
+  }
+  return new Map([...groups].map(([k, g]) => [k, [...g.values()]]));
+}
+function pickOf(key, group){
+  if (S.pick[key]) return S.pick[key];
+  const first = group.find(i => i.variants.some(v=>v.available)) || group[0];
+  S.pick[key] = { h: first.handle, sizes: new Set() };
+  return S.pick[key];
+}
 function render(){
   const box = document.getElementById("items");
   const f = (document.getElementById("filter").value||"").toLowerCase();
   const list = S.items.filter(it => !f || it.title.toLowerCase().includes(f));
   const totalVar = S.items.reduce((a,b)=>a+b.variants.length,0);
   const inVar = S.items.reduce((a,b)=>a+b.variants.filter(v=>v.available).length,0);
-  document.getElementById("stat").innerHTML = "<span>상품 <b>"+S.items.length+"</b></span><span>재고 사이즈 <b>"+inVar+"</b>/"+totalVar+"</span>";
+  document.getElementById("stat").innerHTML = "<span>상품 <b>"+list.length+"</b></span><span>재고 사이즈 <b>"+inVar+"</b>/"+totalVar+"</span>";
   box.innerHTML = "";
   if (!list.length){ box.innerHTML = '<span class="muted">항목 없음</span>'; return; }
-  for (const it of list){
+  // 같은 style = 같은 상품의 다른 색. 색을 골라야 사이즈가 보인다.
+  const groups = groupByStyle(list);
+  for (const [key, group] of groups){
+    const pick = pickOf(key, group);
+    const cur = group.find(i => i.handle === pick.h) || group[0];
     const d = document.createElement("div"); d.className = "card";
-    const im = document.createElement("img"); im.loading = "lazy"; im.src = it.img; im.alt = it.title;
+    const im = document.createElement("img"); im.loading = "lazy"; im.src = cur.img; im.alt = cur.title;
     const bd = document.createElement("div"); bd.className = "bd";
-    const t = document.createElement("div"); t.className = "t"; t.textContent = it.title;
-    const p = document.createElement("div"); p.className = "p"; p.textContent = it.price ? it.price.toLocaleString() : "";
+    const t = document.createElement("div"); t.className = "t"; t.textContent = cur.title;
+    const p = document.createElement("div"); p.className = "p";
+    p.textContent = (cur.price ? cur.price.toLocaleString() : "") + (group.length > 1 ? " · " + group.length + "색" : "");
+    bd.append(t, p);
+    if (group.length > 1){
+      const cs = document.createElement("div"); cs.className = "chips";
+      for (const g of group){
+        const c = document.createElement("span");
+        c.className = "chip col" + (g.handle === cur.handle ? " sel" : "") + (g.variants.some(v=>v.available) ? "" : " out");
+        c.textContent = g.color || "기본";
+        if (g.handle !== cur.handle) c.onclick = () => { pick.h = g.handle; render(); };
+        cs.appendChild(c);
+      }
+      bd.append(cs);
+    }
     const chips = document.createElement("div"); chips.className = "chips";
-    for (const v of it.variants){
+    for (const v of cur.variants){
       const c = document.createElement("span");
-      c.className = "chip" + (v.available ? "" : " out");
+      c.className = "chip" + (v.available ? "" : " out") + (pick.sizes.has(v.title) ? " sel" : "");
       c.textContent = v.title || v.id;
-      if (v.available) c.onclick = () => { S.sizes[it.handle] = v.id; render(); };
-      if (S.sizes[it.handle] === v.id) c.classList.add("sel");
+      // 품절이어도 눌러서 담아둘 수 있다 (드랍 때 재고가 붙는 경우가 많다)
+      c.onclick = () => { pick.sizes.has(v.title) ? pick.sizes.delete(v.title) : pick.sizes.add(v.title); render(); };
       chips.appendChild(c);
     }
-    const vid = document.createElement("div"); vid.className = "vid";
-    const sel = it.variants.find(v=>v.id === S.sizes[it.handle]);
-    vid.textContent = sel ? "#" + sel.id : "";
-    const go = document.createElement("button"); go.className = "go"; go.textContent = "체크아웃";
-    go.disabled = !it.variants.some(v=>v.available);
-    go.onclick = () => checkout(it, sel || it.variants.find(v=>v.available));
-    bd.append(t, p, chips, vid, go);
+    bd.append(chips);
+    const ft = document.createElement("div"); ft.className = "ft";
+    const add = document.createElement("button"); add.textContent = "타깃 추가";
+    const go = document.createElement("button"); go.textContent = "체크아웃";
+    go.disabled = !cur.variants.some(v=>v.available);
+    add.onclick = () => addFromCard(key, group);
+    go.onclick = () => {
+      const v = cur.variants.find(x => pick.sizes.has(x.title) && x.available) || cur.variants.find(x=>x.available);
+      checkout(cur, v);
+    };
+    ft.append(add, go);
+    bd.append(ft);
     d.append(im, bd); box.appendChild(d);
   }
+}
+function addFromCard(key, group){
+  const pick = S.pick[key]; if (!pick) return;
+  const cur = group.find(i => i.handle === pick.h); if (!cur) return;
+  const sizes = [...pick.sizes];
+  if (!sizes.length){
+    const dflt = (document.getElementById("dropSize").value||"").trim();
+    if (dflt) sizes.push(...dflt.split("|").map(s=>s.trim()).filter(Boolean));
+  }
+  addTargetLine([kwOf(cur.title), cur.handle, sizes.join("|")].join(";"));
+  pick.sizes.clear(); render();
 }
 
 async function checkout(it, v){
@@ -572,21 +653,64 @@ function normSize(x){
     .replace("xxlarge","xxl").replace("xlarge","xl")
     .replace("small","s").replace("medium","m").replace("large","l");
 }
-// 줄 형식: "키워드1|키워드2,사이즈1|사이즈2". 사이즈는 뒤에서부터 사이즈처럼 생긴 필드만 떼어낸다.
+// 줄 형식: "키워드1|키워드2;핸들1|핸들2;사이즈1|사이즈2" (세미콜론 3그룹, 빈 그룹 허용)
+// 핸들이 있으면 그 상품(=색)만 잡는다. 세미콜론이 없는 옛 줄은 뒤에서 사이즈 토큰만 떼어낸다.
 const SIZE_RE = /^(?:\d{1,2}(?:\.\d)?|x{0,3}[sml]|os|one ?size|small|medium|large|x-?small|x-?large)$/i;
-function targetsParsed(){
-  return (document.getElementById("targets").value||"").split("\n").map(l=>l.trim()).filter(Boolean).map(line=>{
-    const vals = line.split(",").map(s=>s.trim()).filter(Boolean);
-    const sizes = [];
+function parseTgt(line){
+  const raw = String(line||"").trim();
+  let kwStr = raw, hStr = "", sizeStr = "";
+  if (raw.includes(";")){
+    const g = raw.split(";");
+    kwStr = g[0]||""; hStr = g[1]||""; sizeStr = g[2]||"";
+  } else {
+    const vals = raw.split(",").map(s=>s.trim()).filter(Boolean);
+    const tail = [];
     while (vals.length > 1){
       const parts = vals[vals.length-1].split("|").map(s=>s.trim()).filter(Boolean);
       if (!parts.length || !parts.every(s=>SIZE_RE.test(s))) break;
-      sizes.unshift(...parts);
+      tail.unshift(...parts);
       vals.pop();
     }
-    const kw = vals.join("|").split("|").map(s=>s.trim()).filter(Boolean);
-    return { kw, sizes };
-  }).filter(t=>t.kw.length);
+    kwStr = vals.join("|"); sizeStr = tail.join("|");
+  }
+  const list = (s)=>s.split("|").map(x=>x.trim()).filter(Boolean);
+  const kw = list(kwStr), handles = list(hStr), sizes = list(sizeStr);
+  if (!kw.length && !handles.length) return null;
+  return { kw, handles, sizes };
+}
+function targetsParsed(){
+  return targetLines().map(parseTgt).filter(Boolean);
+}
+function targetLines(){
+  return (document.getElementById("targets").value||"").split("\n").map(l=>l.trim()).filter(Boolean);
+}
+function writeTargets(lines){
+  document.getElementById("targets").value = lines.join("\n");
+  readForm(); renderTgtChips();
+}
+function addTargetLine(line){
+  if (!line || line === ";;") return;
+  const cur = targetLines(); if (cur.includes(line)) { log("이미 있는 타깃: " + line.replace(/;/g," ")); return; }
+  cur.push(line); writeTargets(cur); log("타깃 추가: " + line.replace(/;/g," "));
+}
+function dropTargetLine(i){ const cur = targetLines(); cur.splice(i,1); writeTargets(cur); }
+function renderTgtChips(){
+  const box = document.getElementById("tgtChips"); if (!box) return;
+  box.innerHTML = "";
+  const lines = targetLines();
+  if (!lines.length){ box.innerHTML = '<span class="muted" style="font-size:11px">아직 없음</span>'; return; }
+  lines.forEach((line, i)=>{
+    const t = parseTgt(line); if (!t) return;
+    const c = document.createElement("span"); c.className = "chip";
+    const b = document.createElement("b"); b.textContent = (t.kw.join(" ") || t.handles.join(" "));
+    c.append(b);
+    if (t.sizes.length) c.append(document.createTextNode(" / " + t.sizes.join(",")));
+    if (t.handles.length) { const m = document.createElement("i"); m.style.color = "#7aa7ff"; m.textContent = " 색"; c.append(m); }
+    const x = document.createElement("span"); x.textContent = "×"; x.title = "삭제";
+    x.onclick = ()=>dropTargetLine(i);
+    c.append(x);
+    box.appendChild(c);
+  });
 }
 function stopAuto(){ if (S.auto) clearTimeout(S.auto); S.auto = null; }
 function stopWatch(){ S.watch = null; }
@@ -689,7 +813,7 @@ function standbyTab(){
   if (!localStorage.getItem("cop.ghToken")) { log("토큰을 먼저 저장하세요 (대기 모드는 토큰 필요)", "e"); return; }
   const payload = {
     profile: profilePayload(), payment: paymentPayload(),
-    targets: targetsParsed().map(t=>({ kw:t.kw, exclude:[], sizes:t.sizes, qty:1, anySize:!t.sizes.length })),
+    targets: targetsParsed().map(t=>({ kw:t.kw, handles:t.handles, exclude:[], sizes:t.sizes, qty:1, anySize:!t.sizes.length })),
     autoSubmit: true, remote: true, standby: true, ghToken: localStorage.getItem("cop.ghToken"),
     preload: true, atcDelayMs: +document.getElementById("rampStart").value || 10000,
     checkoutDelayMs: 10000, atcDelayFastMs: +S.cfg.delay.atc, checkoutDelayFastMs: +S.cfg.delay.chk,
@@ -706,7 +830,7 @@ function armWithScript(){
   if (!S.cfg.m[S.market].email){ log("이메일을 입력하세요", "e"); return; }
   const payload = {
     profile: profilePayload(), payment: paymentPayload(),
-    targets: tgs.map(t=>({ kw:t.kw, exclude:[], sizes:t.sizes, qty:1, anySize:!t.sizes.length })),
+    targets: tgs.map(t=>({ kw:t.kw, handles:t.handles, exclude:[], sizes:t.sizes, qty:1, anySize:!t.sizes.length })),
     autoSubmit: true, jitter: (+S.cfg.delay.jit)/100,
     atcDelayMs: +document.getElementById("rampStart").value || 10000,
     checkoutDelayMs: +document.getElementById("rampStart").value || 10000,
@@ -721,7 +845,7 @@ function armWithScript(){
 async function setMarket(m){
   readForm();
   S.market = m;
-  S.items = []; S.sizes = {}; S.watch = null; S.known = new Set();
+  S.items = []; S.pick = {}; S.watch = null; S.known = new Set();
   document.getElementById("mKR").className = m === "KR" ? "on" : "";
   document.getElementById("mUS").className = m === "US" ? "on" : "";
   document.getElementById("lbZone").textContent = m === "KR" ? "주/도 코드" : "주 (예: DE)";
@@ -758,6 +882,7 @@ async function detectGeo(){
 document.getElementById("mKR").onclick = () => setMarket("KR");
 { const tk = localStorage.getItem("cop.ghToken"); if (tk) document.getElementById("ghToken").value = tk; }
 setMarket("KR");
+renderTgtChips();
 (async () => {
   for (let t = 0; t < 5; t++){
     await sleep(1200 + t * 1200);
@@ -769,6 +894,7 @@ document.getElementById("mUS").onclick = () => setMarket("US");
 document.getElementById("btnRefresh").onclick = () => loadList("full");
 document.getElementById("btnDropDirect").onclick = () => loadDroplist({ force: true });
 document.getElementById("filter").oninput = () => render();
+document.getElementById("targets").addEventListener("input", () => renderTgtChips());
 document.getElementById("btnSave").onclick = () => { readForm(); log("저장됨"); };
 document.getElementById("btnFill").onclick = () => { S.cfg.p[S.market] = {}; save(); loadForm(); log("결제정보 지움"); };
 document.getElementById("btnAuto").onclick = (e) => {
@@ -781,10 +907,26 @@ document.getElementById("btnMCP").onclick = () => {
   checkout({ title: "수동", variants: [] }, { id: raw[0], title: "" });
 };
 document.getElementById("btnDropAll").onclick = () => {
-  const cards = [...document.querySelectorAll("#dropItems .card .t")].map(e=>e.textContent);
-  if (!cards.length) { log("리스트가 없습니다", "e"); return; }
-  cards.forEach(addTargetFromName);
+  const groups = groupByStyle(S.items);
+  let n = 0;
+  for (const [key, group] of groups){
+    const pick = S.pick[key];
+    if (!pick || (!pick.sizes.size && group.find(i=>i.handle===pick.h) === undefined)) continue;
+    const before = targetLines().length;
+    addFromCard(key, group);
+    if (targetLines().length > before) n++;
+  }
+  // 카드 선택이 없으면 드랍 리스트 카드 전부
+  if (!n){
+    const cards = [...document.querySelectorAll("#dropItems .card .t")].map(e=>e.textContent);
+    if (!cards.length) { log("선택된 항목 없음", "e"); return; }
+    cards.forEach((c)=>addTargetFromName(c));
+    n = cards.length;
+  }
+  log(n + "개 추가됨");
 };
+document.getElementById("btnSelClear").onclick = () => { S.pick = {}; render(); };
+
 document.getElementById("btnSaveToken").onclick = () => {
   const v = document.getElementById("ghToken").value.trim();
   if (v) { localStorage.setItem("cop.ghToken", v); log("토큰 저장됨"); } else { localStorage.removeItem("cop.ghToken"); log("토큰 삭제됨"); }

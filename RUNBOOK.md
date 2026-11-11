@@ -72,9 +72,10 @@ Set-ItemProperty $k ProxyEnable 0
 
 - 패널 HTML 원본은 `panel.src.html`. 수정한 뒤 `node scripts/build-panel.mjs` 로 index.html 을 다시 만든다
   (매번 새 salt/IV. `index.html` 을 직접 고치면 다음 빌드에서 날아간다)
-- 타깃 줄 형식: `키워드1|키워드2,사이즈1|사이즈2` — 사이즈를 비우면 아무 사이즈나 잡는다.
-  예전 쉼표 형식(`키워드1,키워드2,사이즈`)도 그대로 읽힌다
-- 확인: `node --check dist/*.js`, `node scripts/selftest.mjs`. 배포 검증은 index.html 을 복호화해 dist 와 비교
+- 타깃 줄 형식: `키워드1|키워드2;핸들1|핸들2;사이즈1|사이즈2` — 핸들이 있으면 그 색(상품)만, 사이즈를 비우면 아무 사이즈나 잡는다.
+  예전 쉼표 형식(`키워드1,키워드2,사이즈`)도 그대로 읽힌다. 패널 카드에서 색/사이즈를 눌러 추가하면 이 형식이 자동으로 쌓인다
+- 한 번에 최대 3개까지 담고(타깃 순서 우선) 체크아웃은 마지막에 한 번만 한다
+- 확인: `node --check dist/*.js`, `node scripts/selftest.mjs`, `node scripts/matchtest.mjs`. 배포 검증은 index.html 을 복호화해 dist 와 비교
 - `state.json` 은 `byMarket.KR` / `byMarket.US` 슬롯에 쓴다. 슬롯 없이 `market:"KR"` 만 쓰면 US 탭이 명령을 무시한다
 
 ## 하면 안 되는 것
